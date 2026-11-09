@@ -26,6 +26,13 @@ Sem isso cada aparelho guarda só os próprios dados.
 
 A mesclagem é por lançamento: o registro mais recente vence, e exclusões também sincronizam. Dois lançamentos feitos ao mesmo tempo em aparelhos diferentes não se perdem.
 
+## Acesso (usuário + PIN)
+- Na primeira abertura de cada aparelho, cada pessoa cria o próprio **usuário** e um **PIN de 4 números**. Nada disso vai no código: o app guarda só um hash PBKDF2 (150 mil iterações, sal aleatório) no aparelho.
+- O app pede o login ao abrir e volta a bloquear depois de um tempo fora dele (padrão 5 min; em **Ajustes → Acesso** dá para escolher "ao sair", 1, 5 ou 15 min, bloquear na hora e alterar o PIN).
+- Após 5 erros seguidos há espera de 30 s, que dobra a cada nova série de 5 (máximo de 15 min).
+- **Esqueci o PIN** apaga todos os dados e ajustes daquele aparelho (inclusive a sincronização) e abre a criação de um novo acesso. Com a sincronização, reconecte para trazer os dados de volta.
+- **Limite honesto:** é uma trava de tela. Os dados continuam no armazenamento do navegador sem criptografia, e 4 dígitos têm só 10 mil combinações; quem tiver acesso técnico ao aparelho desbloqueado ou ao arquivo do navegador consegue contornar. Ela protege contra quem pega o celular, não contra quem o analisa.
+
 ## Premissas e limites
 - Taxas editáveis em **Ajustes** (CDI, IPCA, abertura dos cenários, % do CDI das metas). Valores de partida de nov/2026: CDI 13,65% a.a. (Selic meta 13,75% menos 0,10 p.p.) e IPCA 4,5% a.a. Atualize quando mudarem.
 - Taxa anual vira mensal por equivalência `(1+a)^(1/12)-1`. IR regressivo por aporte (22,5% / 20% / 17,5% / 15%). Aportes entram no fim do mês.
