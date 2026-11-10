@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Joint</title>
 <meta name="theme-color" content="#000000">
 <meta name="description" content="Finanças do casal: gastos, metas, viagens e simulador de investimento.">
@@ -213,6 +213,14 @@ details p b{color:var(--fg)}
 .ach em{font-style:normal;font-size:.68rem;font-weight:700}
 .row.sp>.badge{white-space:nowrap;flex:none}
 details.cmp{padding:8px 12px}details.cmp summary{font-weight:700;font-size:.9rem;cursor:pointer}details.cmp label.f{margin-top:8px}
+
+/* ===== Trava lateral (iOS): nada de pan horizontal ===== */
+html,body{overflow-x:hidden;max-width:100%;touch-action:pan-y;overscroll-behavior-x:none}
+.sheet{overflow-x:hidden;touch-action:pan-y;overscroll-behavior:contain}
+.sheet-body{overflow-x:hidden;max-width:100%;overscroll-behavior-x:none;touch-action:pan-y}
+.sheet-body *,label.f,.grid2>*{min-width:0}
+input[type=date],input[type=month],select{-webkit-appearance:none;appearance:none;min-width:0;max-width:100%}
+input,select,textarea,.af input{font-size:16px}
 
 </style>
 </head>
