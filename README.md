@@ -41,6 +41,13 @@ Tudo é calculado a partir dos lançamentos; só se gravam as datas das conquist
 - **Conquistas:** 14 selos (primeiro lançamento, 7 e 30 dias de registro, mês no azul, 3 e 6 meses no plano, orçamento fiel, primeiro aporte, "Dupla" quando os dois aportam no mesmo mês, meta a 50% e cumprida, reserva de 1/3/6 meses). O **nível do casal** segue a reserva: metas que não são viagem, medidas em meses do gasto médio.
 - Na sincronização a data de desbloqueio mais antiga prevalece, então os dois aparelhos concordam.
 
+## Parcelas e cartões
+- **Compra parcelada:** no lançamento de uma despesa, informe o número de parcelas (até 48). O app gera uma parcela por mês ("3/10"), divide o total sem perder centavos (a sobra vai na 1ª parcela) e mantém quem pagou e a divisão do casal. Editar uma parcela altera só ela; "Excluir esta e as seguintes" remove a série. Parcelas contam como compromisso fixo na projeção de fechamento do mês e a 2ª em diante não conta como registro do dia na gamificação.
+- **Cartões** (Ajustes): nome, dia de fechamento, dia de vencimento e dono. Compra até o dia do fechamento entra na fatura do mês; depois, na seguinte. **O lançamento pesa no mês em que a fatura vence** (quando o dinheiro sai); a data de cada item continua sendo a da compra. Em **Gastos**, o cartão "Faturas" mostra total e vencimento por cartão. Fixos também podem ser lançados no cartão.
+- **Comprometido** (início): soma de parcelas e faturas já lançadas para os próximos meses.
+- **À vista x parcelado:** ao parcelar, o app mostra o desconto à vista a partir do qual vale pagar à vista: valor presente das parcelas aplicando o dinheiro a X% do CDI (premissa das metas) com IR regressivo e 1ª parcela em 30 dias. Se você informar o preço à vista, ele diz qual lado vence e os juros implícitos (a.a.).
+- Mudar fechamento ou vencimento vale só para novos lançamentos; excluir um cartão mantém o histórico.
+
 ## Premissas e limites
 - Taxas editáveis em **Ajustes** (CDI, IPCA, abertura dos cenários, % do CDI das metas). Valores de partida de nov/2026: CDI 13,65% a.a. (Selic meta 13,75% menos 0,10 p.p.) e IPCA 4,5% a.a. Atualize quando mudarem.
 - Taxa anual vira mensal por equivalência `(1+a)^(1/12)-1`. IR regressivo por aporte (22,5% / 20% / 17,5% / 15%). Aportes entram no fim do mês.

@@ -1,6 +1,6 @@
 const fs=require("fs"),vm=require("vm"),assert=require("assert");
 const ctx={};vm.createContext(ctx);const html=fs.readFileSync(__dirname+"/../index.html","utf8");const a=html.indexOf("/* ===== NÚCLEO FINANCEIRO"),b=html.indexOf("/* ===== FIM DO NÚCLEO");if(a<0||b<0)throw new Error("núcleo não encontrado no index.html");vm.runInContext(html.slice(a,b),ctx);
-const {simulate,solvePmt,solveMonths,fvClosed,mRate,irRate,shares,balance,parseMoney,dayAdd,dayDiff,logStreak,planStreak,milestones,streakScan}=ctx;
+const {simulate,solvePmt,solveMonths,fvClosed,mRate,irRate,shares,balance,parseMoney,dayAdd,dayDiff,logStreak,planStreak,milestones,streakScan,addMonths,invoiceOf,splitParcelas,parcelPV,parcelRate}=ctx;
 let n=0;function ok(name,f){f();n++;console.log("ok -",name)}
 const near=(a,b,t,m)=>assert(Math.abs(a-b)<=t,(m||"")+" "+a+" vs "+b);
 
@@ -69,4 +69,26 @@ ok("marcos da meta: data do aporte que cruzou, valor inicial e meta zero",()=>{
   assert.deepEqual(m.map(x=>x.reached),[true,true,false,false]);assert.equal(m[0].date,"2026-01-10");assert.equal(m[1].date,"2026-02-10");assert.equal(m[1].amt,5000);
   m=milestones(8000,c,10000,[25,50,75,100]);assert.deepEqual(m.map(x=>x.reached),[true,true,true,true]);assert.equal(m[2].date,null);
   assert.equal(milestones(0,c,0,[25]).every(x=>!x.reached),true)});
+
+/* ---------- parcelas e cartão ---------- */
+ok("addMonths: não estoura o fim do mês e vira o ano",()=>{
+  assert.equal(addMonths("2026-01-31",1),"2026-02-28");assert.equal(addMonths("2028-01-31",1),"2028-02-29");assert.equal(addMonths("2026-11-10",3),"2027-02-10");assert.equal(addMonths("2026-03-31",-1),"2026-02-28");assert.equal(addMonths("2026-11-10",0),"2026-11-10")});
+ok("fatura: dia do fechamento fica na fatura do mês; o dia seguinte vai para a próxima",()=>{
+  let r=invoiceOf("2026-11-05",5,12);assert.deepEqual([r.m,r.due],["2026-11","2026-11-12"]);
+  r=invoiceOf("2026-11-06",5,12);assert.deepEqual([r.m,r.due],["2026-12","2026-12-12"])});
+ok("fatura: vencimento antes do fechamento cai no mês seguinte (fecha 25, vence 5)",()=>{
+  let r=invoiceOf("2026-11-20",25,5);assert.deepEqual([r.m,r.due],["2026-12","2026-12-05"]);
+  r=invoiceOf("2026-11-28",25,5);assert.deepEqual([r.m,r.due],["2027-01","2027-01-05"]);
+  r=invoiceOf("2026-12-28",25,5);assert.deepEqual([r.m,r.due],["2027-02","2027-02-05"])});
+ok("fatura: vencimento 28 em fevereiro usa o último dia",()=>{const r=invoiceOf("2027-02-01",1,28);assert.equal(r.due,"2027-02-28")});
+ok("parcelas: soma exata e centavos que sobram na primeira",()=>{
+  assert.deepEqual(splitParcelas(10001,3),[3335,3333,3333]);assert.deepEqual(splitParcelas(10000,4),[2500,2500,2500,2500]);
+  [[99999,7],[1,3],[300000,10],[12345,48]].forEach(([t,n])=>assert.equal(splitParcelas(t,n).reduce((a,b)=>a+b,0),t))});
+ok("valor presente do parcelado: taxa zero = total; maior taxa = menor valor; n=1 fecha em fórmula",()=>{
+  near(parcelPV(120000,12,0),120000,1e-6);
+  assert(parcelPV(120000,12,.1365)<parcelPV(120000,12,.08));assert(parcelPV(120000,12,.1365)<120000);
+  const g=Math.pow(1.12,1/12)-1;near(parcelPV(100000,1,.12),100000/(1+g*(1-.225)),1e-6)});
+ok("taxa implícita: à vista = total => nenhuma; com desconto fecha a equação",()=>{
+  assert.strictEqual(parcelRate(120000,120000,12),null);
+  const i=parcelRate(100000,120000,12);assert(i>0);let s=0;splitParcelas(120000,12).forEach((p,k)=>s+=p/Math.pow(1+i,k+1));near(s,100000,1e-3)});
 console.log("\n"+n+" testes passaram");
