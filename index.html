@@ -192,6 +192,27 @@ details p b{color:var(--fg)}
 .auth-link{background:none;border:0;color:var(--muted);font-weight:700;font-size:.8rem;text-decoration:underline;text-underline-offset:3px;padding:4px}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 
+/* gamificação: sequências, marcos e conquistas (preto e branco: cheio = feito, vazado = falta) */
+.week{display:flex;gap:6px;justify-content:space-between}
+.wd{display:flex;flex-direction:column;align-items:center;gap:3px;flex:1}
+.wd i{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);display:block}
+.wd.on i{background:var(--fg);border-color:var(--fg)}
+.wd.td i{box-shadow:0 0 0 2px var(--bg),0 0 0 3.5px var(--fg)}
+.wd small{font-size:.66rem;font-weight:700;color:var(--muted)}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.stp{display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;min-width:0}
+.stp i{width:30px;height:30px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-style:normal;font-weight:800;font-size:.9rem}
+.stp.on i{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.stp.next i{border-color:var(--fg);border-style:dashed}
+.stp b{font-size:.85rem}.stp small{font-size:.68rem;color:var(--muted);font-weight:600}
+.achgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.ach{border:1px solid var(--line);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:3px;color:var(--muted);min-width:0}
+.ach .seal{width:24px;height:24px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-weight:800;font-size:.8rem}
+.ach b{font-size:.88rem;color:var(--muted)}.ach small{font-size:.72rem;line-height:1.3}
+.ach.on{border-color:var(--fg);color:var(--fg)}.ach.on b{color:var(--fg)}.ach.on .seal{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.ach em{font-style:normal;font-size:.68rem;font-weight:700}
+.row.sp>.badge{white-space:nowrap;flex:none}
+
 </style>
 </head>
 <body>
@@ -310,6 +331,58 @@ function parseMoney(s) {
   var n = parseFloat(s);
   return isFinite(n) ? Math.round(n * 100) : 0;
 }
+
+/* ===== GAMIFICAÇÃO (funções puras) ===== */
+function p2(n) { return ("0" + n).slice(-2); }
+/* datas ISO "AAAA-MM-DD" em UTC (sem efeito de fuso/horário de verão) */
+function dayAdd(iso, k) {
+  var d = new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10) + k));
+  return d.getUTCFullYear() + "-" + p2(d.getUTCMonth() + 1) + "-" + p2(d.getUTCDate());
+}
+function dayDiff(a, b) {
+  var f = function (x) { return Date.UTC(+x.slice(0, 4), +x.slice(5, 7) - 1, +x.slice(8, 10)); };
+  return Math.round((f(b) - f(a)) / 864e5);
+}
+function nextYm(ym) { var y = +ym.slice(0, 4), m = +ym.slice(5, 7) + 1; if (m > 12) { m = 1; y++; } return y + "-" + p2(m); }
+function quarterKey(iso) { return iso.slice(0, 4) + "T" + Math.floor((+iso.slice(5, 7) - 1) / 3); }
+function halfKey(ym) { return ym.slice(0, 4) + "S" + (+ym.slice(5, 7) <= 6 ? 0 : 1); }
+/* Sequência com "folga": a primeira unidade sem registro de cada período é perdoada (a sequência segue, sem contar o dia);
+   a segunda no mesmo período zera. A unidade atual em aberto (graceLast) não conta como falha. */
+function streakScan(seq, ok, keyOf, graceLast) {
+  var run = 0, best = 0, used = {}, last = seq.length - 1;
+  for (var i = 0; i <= last; i++) {
+    var u = seq[i];
+    if (ok[u]) { run++; if (run > best) best = run; }
+    else if (i === last && graceLast) { /* em aberto */ }
+    else if (run > 0) { var k = keyOf(u); if (!used[k]) used[k] = 1; else run = 0; }
+  }
+  return { n: run, best: best, doneNow: last >= 0 && !!ok[seq[last]], freezeUsed: last >= 0 ? !!used[keyOf(seq[last])] : false };
+}
+/* dias seguidos com registro (days = {"AAAA-MM-DD": true}); folga: 1 por trimestre */
+function logStreak(days, today) {
+  var first = null, k;
+  for (k in days) if (days[k] && k <= today && (first === null || k < first)) first = k;
+  if (first === null) return { n: 0, best: 0, doneNow: false, freezeUsed: false };
+  var seq = [], d = first;
+  while (d <= today) { seq.push(d); d = dayAdd(d, 1); }
+  return streakScan(seq, days, quarterKey, true);
+}
+/* meses fechados seguidos dentro do plano (okMonths = {"AAAA-MM": true}); folga: 1 por semestre. O mês atual não entra. */
+function planStreak(okMonths, firstYm, curYm) {
+  var seq = [], m = firstYm;
+  while (m < curYm) { seq.push(m); m = nextYm(m); }
+  if (!seq.length) return { n: 0, best: 0, doneNow: false, freezeUsed: false };
+  return streakScan(seq, okMonths, halfKey, false);
+}
+/* marcos da meta (ex.: 25/50/75/100%): reached e a data do aporte que cruzou o marco (null se já vinha do valor inicial) */
+function milestones(base, conts, target, pcts) {
+  var list = (conts || []).slice().sort(function (a, b) { return a.d < b.d ? -1 : a.d > b.d ? 1 : 0; });
+  return pcts.map(function (p) {
+    var amt = Math.round(target * p / 100), cum = base || 0, date = null, reached = target > 0 && cum >= amt;
+    if (!reached && target > 0) for (var i = 0; i < list.length; i++) { cum += list[i].v; if (cum >= amt) { reached = true; date = list[i].d; break; } }
+    return { p: p, amt: amt, reached: reached, date: date };
+  });
+}
 /* ===== FIM DO NÚCLEO ===== */
 
 
@@ -346,7 +419,7 @@ var KEY="joint.v1",MEKEY="joint.me",SYKEY="joint.sync",THKEY="joint.theme";
 var EXP=["Moradia","Mercado","Restaurantes","Transporte","Saúde","Lazer","Viagem","Assinaturas","Educação","Casa","Pessoal","Presentes","Outros"];
 var INC=["Salário","Extra","Rendimentos","Outros"];
 var TRIP=["Passagens","Hospedagem","Alimentação","Transporte local","Passeios","Seguro viagem","Compras e lembranças"];
-function blank(){return {cfg:{names:["Gabriel","Dayse"],split:50,saveTarget:20,cdi:13.65,infl:4.5,spread:2,goalPct:100,cats:EXP.slice(),u:0},tx:[],rec:[],goals:[],cont:[],bud:{v:{},u:0},sim:null,updatedAt:0}}
+function blank(){return {cfg:{names:["Gabriel","Dayse"],split:50,saveTarget:20,cdi:13.65,infl:4.5,spread:2,goalPct:100,cats:EXP.slice(),u:0},tx:[],rec:[],goals:[],cont:[],day:[],ach:[],bud:{v:{},u:0},sim:null,updatedAt:0}}
 function load(){var d=blank();try{var r=JSON.parse(localStorage.getItem(KEY));if(r&&typeof r==="object"){for(var k in d)if(r[k]!==undefined)d[k]=r[k];var b=blank().cfg;for(k in b)if(d.cfg[k]===undefined)d.cfg[k]=b[k]}}catch(e){}return d}
 var S=load(),saveT=null;
 function persist(){clearTimeout(saveT);saveT=null;try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
@@ -402,6 +475,115 @@ function goalPace(g){ /* média mensal dos aportes dos últimos 90 dias, em cent
   S.cont.forEach(function(c){if(!c.x&&c.g===g.id&&c.d>=l)s+=c.v});return s/3;
 }
 
+
+/* ---------- gamificação: sequências, marcos e conquistas ----------
+   Tudo é derivado dos lançamentos. Só se gravam as datas de desbloqueio (S.ach) e os dias marcados "sem gastos" (S.day). */
+function dBR(d){return d?d.slice(8,10)+"/"+d.slice(5,7)+"/"+d.slice(0,4):""}
+function actDays(){
+  var o={};
+  S.tx.forEach(function(t){if(!t.x&&!t.r&&t.k!=="t"&&t.d)o[t.d]=true});   /* fixos automáticos (t.r) e acertos (t) não contam */
+  S.cont.forEach(function(c){if(!c.x&&c.d)o[c.d]=true});
+  S.day.forEach(function(x){if(!x.x)o[x.id]=true});
+  return o;
+}
+function monthsSeen(){var m={};S.tx.forEach(function(t){if(!t.x&&t.d)m[t.d.slice(0,7)]=1});return Object.keys(m).sort()}
+function planInfo(){   /* mês "no plano": houve renda e a poupança do mês >= meta de poupança */
+  var ok={},first=null;
+  monthsSeen().forEach(function(ym){var sm=summary(ym,-1);if(sm.inc>0){if(first===null)first=ym;ok[ym]=sm.exp<=sm.inc*(1-S.cfg.saveTarget/100)+0.5}});
+  return {ok:ok,first:first};
+}
+function budFaithful(){   /* último mês fechado com orçamento definido e nenhuma categoria orçada estourada */
+  var ym=ymAdd(today().slice(0,7),-1),sm=summary(ym,-1),lim=Object.keys(S.bud.v).filter(function(c){return S.bud.v[c]>0});
+  return sm.exp>0&&lim.length>0&&lim.every(function(c){return (sm.cat[c]||0)<=S.bud.v[c]});
+}
+function reserveInfo(){   /* metas (exceto viagens) em meses de gasto médio dos últimos 3 meses fechados */
+  var cur=today().slice(0,7),ms=monthsSeen().filter(function(ym){return ym<cur&&summary(ym,-1).exp>0}).slice(-3);
+  var avg=ms.length?ms.reduce(function(a,ym){return a+summary(ym,-1).exp},0)/ms.length:0,saved=0;
+  live(S.goals).forEach(function(g){if(g.type!=="viagem")saved+=goalSaved(g)});
+  return {avg:avg,saved:saved,m:avg>0?saved/avg:0};
+}
+function duplaAt(){   /* primeiro mês em que os dois aportaram: data em que o segundo aportou */
+  var by={},best=null;
+  S.cont.forEach(function(c){if(c.x||!c.d)return;var ym=c.d.slice(0,7),w=c.w===1?1:0;by[ym]=by[ym]||{};if(!by[ym][w]||c.d<by[ym][w])by[ym][w]=c.d});
+  Object.keys(by).forEach(function(ym){var o=by[ym];if(o[0]&&o[1]){var at=o[0]>o[1]?o[0]:o[1];if(best===null||at<best)best=at}});
+  return best;
+}
+function goalMs(g){return milestones(g.base||0,S.cont.filter(function(c){return !c.x&&c.g===g.id}),goalTarget(g),[25,50,75,100])}
+function achCtx(){
+  var t=today(),c={},pi=planInfo();
+  c.ls=logStreak(actDays(),t);c.ps=pi.first?planStreak(pi.ok,pi.first,t.slice(0,7)):{n:0,best:0};
+  c.firstTx=null;S.tx.forEach(function(x){if(!x.x&&!x.r&&x.k!=="t"&&x.d&&(c.firstTx===null||x.d<c.firstTx))c.firstTx=x.d});
+  c.firstCont=null;S.cont.forEach(function(x){if(!x.x&&x.d&&(c.firstCont===null||x.d<c.firstCont))c.firstCont=x.d});
+  c.dupla=duplaAt();c.res=reserveInfo();c.bud=budFaithful();c.g50=null;c.g100=null;
+  live(S.goals).forEach(function(g){if(goalTarget(g)<=0)return;var m=goalMs(g);
+    if(m[1].reached){var a=m[1].date||t;if(c.g50===null||a<c.g50)c.g50=a}
+    if(m[3].reached){var b=m[3].date||t;if(c.g100===null||b<c.g100)c.g100=b}});
+  return c;
+}
+var ACH=[
+  {id:"first",n:"Primeiro passo",d:"Registrar o primeiro lançamento.",t:function(c){return c.firstTx?{at:c.firstTx}:null}},
+  {id:"week",n:"Semana inteira",d:"7 dias seguidos registrando.",t:function(c){return c.ls.best>=7?{}:null}},
+  {id:"habit",n:"Mês de hábito",d:"30 dias seguidos registrando.",t:function(c){return c.ls.best>=30?{}:null}},
+  {id:"blue",n:"No azul",d:"Fechar um mês poupando ao menos a meta de poupança.",t:function(c){return c.ps.best>=1?{}:null}},
+  {id:"tri",n:"Trimestre firme",d:"3 meses seguidos dentro do plano.",t:function(c){return c.ps.best>=3?{}:null}},
+  {id:"sem",n:"Meio ano no plano",d:"6 meses seguidos dentro do plano.",t:function(c){return c.ps.best>=6?{}:null}},
+  {id:"bud",n:"Orçamento fiel",d:"Fechar um mês sem estourar nenhuma categoria orçada.",t:function(c){return c.bud?{}:null}},
+  {id:"cont",n:"Primeiro aporte",d:"Registrar o primeiro aporte em uma meta.",t:function(c){return c.firstCont?{at:c.firstCont}:null}},
+  {id:"duo",n:"Dupla",d:"Os dois aportarem em metas no mesmo mês.",t:function(c){return c.dupla?{at:c.dupla}:null}},
+  {id:"g50",n:"Meta a 50%",d:"Chegar à metade de uma meta.",t:function(c){return c.g50?{at:c.g50}:null}},
+  {id:"g100",n:"Meta cumprida",d:"Atingir 100% de uma meta.",t:function(c){return c.g100?{at:c.g100}:null}},
+  {id:"r1",n:"Reserva de 1 mês",d:"Metas (menos viagens) somando 1 mês de gastos.",t:function(c){return c.res.m>=1?{}:null}},
+  {id:"r3",n:"Reserva de 3 meses",d:"Metas (menos viagens) somando 3 meses de gastos.",t:function(c){return c.res.m>=3?{}:null}},
+  {id:"r6",n:"Reserva de 6 meses",d:"Metas (menos viagens) somando 6 meses de gastos.",t:function(c){return c.res.m>=6?{}:null}}
+];
+var LEVELS=["Começando","Reserva de 1 mês","Reserva de 3 meses","Reserva de 6 meses"];
+function achState(){var c=achCtx();return ACH.map(function(a){var r=a.t(c);return {a:a,ok:!!r,at:r&&r.at||""}})}
+function achCheck(){
+  var have={};S.ach.forEach(function(x){have[x.id]=1});
+  var nw=achState().filter(function(s){return s.ok&&!have[s.a.id]});
+  if(!nw.length)return;
+  nw.forEach(function(s){S.ach.push({id:s.a.id,d:s.at||today(),u:Date.now()})});
+  save();
+  setTimeout(function(){toast(nw.length===1?"Conquista: "+nw[0].a.n+".":nw.length+" conquistas novas. Veja em Conquistas, na tela inicial.")},2800);
+}
+function gameCard(){
+  var t=today(),days=actDays(),ls=logStreak(days,t),pi=planInfo(),ps=pi.first?planStreak(pi.ok,pi.first,t.slice(0,7)):{n:0,best:0,freezeUsed:false};
+  var got=achState().filter(function(s){return s.ok}).length,mk=find(S.day,t),marked=!!mk&&!mk.x;
+  var wk="";for(var i=6;i>=0;i--){var d=dayAdd(t,-i),q=d.split("-");wk+='<span class="wd'+(days[d]?' on':'')+(i===0?' td':'')+'" title="'+dBR(d)+(days[d]?': registrado':'')+'"><i></i><small>'+"DSTQQSS".charAt(new Date(+q[0],+q[1]-1,+q[2]).getDay())+'</small></span>'}
+  var h='<div class="card"><div class="row sp"><h4>Sequências</h4><button class="ghost" data-act="ach">Conquistas '+got+'/'+ACH.length+'</button></div>'
+    +'<div class="grid2"><div class="stat"><span>Registro</span><b>'+ls.n+(ls.n===1?' dia':' dias')+'</b><small class="note">melhor '+ls.best+' · '+(ls.freezeUsed?'folga do trimestre usada':'1 folga no trimestre')+'</small></div>'
+    +'<div class="stat"><span>No plano</span><b>'+ps.n+(ps.n===1?' mês':' meses')+'</b><small class="note">melhor '+ps.best+' · '+(ps.freezeUsed?'folga do semestre usada':'1 folga no semestre')+'</small></div></div>'
+    +'<div class="week" role="img" aria-label="Registros dos últimos 7 dias">'+wk+'</div>';
+  if(marked)h+='<div class="row sp"><span class="note">Hoje marcado como <b>sem gastos</b>.</span><button class="ghost" data-act="noundo">Desfazer</button></div>';
+  else if(!ls.doneNow)h+='<div class="row sp"><span class="note">'+(ls.n>0?'Registre algo hoje para manter os <b>'+ls.n+'</b> dias.':'Registre um lançamento para começar.')+'</span><button class="ghost" data-act="noday">Hoje sem gastos</button></div>';
+  return h+'</div>';
+}
+function openAch(){
+  var st=achState(),rv=reserveInfo(),lv=rv.m>=6?3:rv.m>=3?2:rv.m>=1?1:0;sheetKind="ach";
+  var h='<h3>Conquistas</h3><div class="card"><h4>Nível do casal</h4><div class="bigv">'+lv+'</div><p class="note"><b>'+LEVELS[lv]+'</b>. '+(rv.avg>0?'Metas (menos viagens): <b>'+brl0(rv.saved)+'</b> = '+nf(rv.m,1)+' mês de gastos (gasto médio mensal dos últimos meses fechados, até 3: '+brl0(rv.avg)+').':'Disponível depois do primeiro mês fechado com gastos.')+'</p></div><div class="achgrid">';
+  st.forEach(function(x){var rec=null;S.ach.forEach(function(a){if(a.id===x.a.id)rec=a});
+    h+='<div class="ach'+(x.ok?' on':'')+'"><span class="seal">'+(x.ok?'✓':'')+'</span><b>'+esc(x.a.n)+'</b><small>'+esc(x.a.d)+'</small>'+(x.ok&&rec?'<em>'+dBR(rec.d)+'</em>':'')+'</div>'});
+  h+='</div><p class="note"><b>Registro</b>: dias seguidos com algum lançamento ou aporte (ou "hoje sem gastos"); uma falha por trimestre é perdoada. <b>No plano</b>: meses fechados em que a poupança atingiu a meta de '+nf(S.cfg.saveTarget,0)+'%; uma falha por semestre é perdoada. Fixos automáticos e acertos não contam.</p><button class="btn sec full" data-act="close">Fechar</button>';
+  openSheet(h);
+}
+function journeyCard(g,n){
+  var ms=goalMs(g),ev=g.ev||(g.due?g.due+"-"+pad(dim(g.due)):""),dd=ev?dayDiff(today(),ev):null;
+  var h='<div class="card"><h4>Jornada</h4>';
+  if(dd!=null)h+='<div><div class="bigv">'+Math.max(0,dd)+'</div><p class="note" style="margin:2px 0 0">'+(dd>1?'dias ':dd===1?'dia ':'')+(dd<0?'prazo encerrado':dd===0?'é hoje':(g.ev?'até '+dBR(g.ev):'até o fim do prazo ('+ymShort(g.due)+')'))+'</p></div>';
+  h+='<div class="steps">';
+  ms.forEach(function(m,i){var nx=!m.reached&&(i===0||ms[i-1].reached);
+    h+='<div class="stp'+(m.reached?' on':'')+(nx?' next':'')+'"><i>'+(m.reached?'✓':'')+'</i><b>'+m.p+'%</b><small>'+brl0(m.amt)+'</small>'+(m.reached&&m.date?'<small>'+m.date.slice(8,10)+'/'+m.date.slice(5,7)+'</small>':'')+'</div>'});
+  h+='</div>';
+  var nxm=null;ms.forEach(function(m){if(!m.reached&&!nxm)nxm=m});
+  h+=nxm?'<p class="note">Próximo marco: <b>'+nxm.p+'%</b> · faltam <b>'+brl0(Math.max(0,nxm.amt-n.sv))+'</b>.</p>':'<p class="note"><b>Todos os marcos alcançados.</b></p>';
+  if(!n.done&&g.due&&n.n>0&&n.pmt>0){
+    var pace=goalPace(g)/100,r=pace/n.pmt,lab=pace<=0?'Sem aportes recentes':r>=1.05?'▲ À frente do ritmo':r>=.95?'● No ritmo':'▼ Abaixo do ritmo';
+    h+='<div class="row sp"><span class="badge">'+lab+'</span><span class="note">média 3 meses: <b>'+brlR0(pace)+'</b> de <b>'+brlR0(n.pmt)+'</b>/mês</span></div>';
+  }
+  return h+'</div>';
+}
+function msCount(g){return goalMs(g).filter(function(m){return m.reached}).length}
+
 /* ---------- ícones ---------- */
 var IC={home:'<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',plus:'<path d="M12 5v14M5 12h14"/>',target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',chart:'<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',back:'<path d="M15 18l-6-6 6-6"/>',next:'<path d="M9 18l6-6-6-6"/>'};
 function ic(n){return '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">'+IC[n]+'</svg>'}
@@ -444,6 +626,7 @@ function vHome(){
     h+='<p class="note">Projeção de fechamento: <b>'+brl0(proj)+'</b> <span title="fixos + média diária dos gastos variáveis × dias do mês">(fixos + ritmo diário dos variáveis)</span>'+(bt>0&&proj>bt?' · <span class="neg">acima do orçamento em '+brl0(proj-bt)+'</span>':'')+'.</p>';
   }
   h+='</div>';
+  h+=gameCard();
   var bi=balanceInfo();
   h+='<div class="card"><h4>Entre vocês</h4><p style="margin:0">'+bi.txt+'</p>'+(bi.debtor>=0?'<button class="ghost" data-act="settle">Registrar acerto</button>':'')+'<p class="note">Saldo acumulado de todas as despesas divididas, descontando os acertos já registrados.</p></div>';
   if(!S.tx.length)h+='<div class="card"><h3>Comece por aqui</h3><p class="note">Toque no <b>+</b> para lançar o primeiro gasto ou receita. Em Ajustes você confere os nomes, a divisão e as premissas de juros.</p></div>';
@@ -494,6 +677,7 @@ function vGoal(){
   var n=goalNeed(g),h='<div class="view"><div class="row"><button class="ghost" data-act="goalback">'+ic("back")+' Metas</button></div>';
   h+='<div class="top"><div><h1>'+esc(g.name)+'</h1><p class="sub">'+(g.type==="viagem"?'Viagem · ':'')+(g.due?'prazo '+ymLabel(g.due):'sem prazo')+'</p></div></div>';
   h+='<div class="card hero"><div class="bigv">'+brl0(n.sv)+'</div><div class="bar"><i class="g" style="width:'+(n.p*100).toFixed(1)+'%"></i></div><p class="note">de <b>'+brl0(n.tg)+'</b> · '+pc(n.p)+' · faltam <b>'+brl0(Math.max(0,n.tg-n.sv))+'</b></p></div>';
+  if(n.tg>0)h+=journeyCard(g,n);
   h+='<div class="card"><h4>Quanto guardar por mês</h4>';
   if(n.done)h+='<p style="margin:0" class="pos"><b>Meta atingida.</b></p>';
   else if(!g.due)h+='<p class="note">Defina um prazo para calcular o aporte mensal.</p>';
@@ -610,6 +794,7 @@ function simOut(){
 
 /* ---------- renderização ---------- */
 function render(){
+  if(started)achCheck();
   var f=tab==="home"?vHome:tab==="gastos"?vGastos:tab==="sim"?vSim:(goalId?vGoal:vMetas);
   var sx=window.scrollX,sy=window.scrollY;$("#app").innerHTML=f();
   $$(".tabbar [data-act=tab]").forEach(function(b){b.classList.toggle("on",b.dataset.id===tab)});
@@ -684,7 +869,7 @@ function openGoal(g){
   if(!draft.items)draft.items=[];sheetKind="goal";drawGoal();
 }
 function readGoal(){
-  var f=fields();draft.name=f.name!=null?f.name:draft.name;if(f.target!=null)draft.target=parseMoney(f.target);draft.base=parseMoney(f.base);draft.due=f.due||"";
+  var f=fields();draft.name=f.name!=null?f.name:draft.name;if(f.target!=null)draft.target=parseMoney(f.target);draft.base=parseMoney(f.base);draft.due=f.due||"";draft.ev=f.ev||"";
   if(f.margin!=null)draft.margin=parseFloat(String(f.margin).replace(",","."))||0;if(f.infl!=null)draft.infl=f.infl;
   var its=[];$$("#sheetBody [data-it]").forEach(function(r){its.push({n:$("[data-in]",r).value,v:parseMoney($("[data-iv]",r).value)})});if(draft.type==="viagem")draft.items=its;
 }
@@ -697,7 +882,7 @@ function drawGoal(){
     h+='<button type="button" class="ghost" data-act="iadd">+ Adicionar item</button><label class="f">Margem de segurança (%)<input type="text" inputmode="decimal" data-f="margin" value="'+fnum(d.margin)+'"></label>';
     var sub=d.items.reduce(function(a,i){return a+(i.v||0)},0);h+='<p class="note">Total com margem: <b>'+brl(Math.round(sub*(1+(d.margin||0)/100)))+'</b></p>';
   }else h+='<label class="f">Valor da meta (R$)<input class="big" type="text" inputmode="decimal" data-f="target" value="'+fin(d.target)+'" placeholder="0,00"></label>';
-  h+='<label class="f">Prazo (mês)<input type="month" data-f="due" value="'+esc(d.due||"")+'"></label><label class="f">Já guardado hoje (R$)<input type="text" inputmode="decimal" data-f="base" value="'+fin(d.base)+'" placeholder="0,00"></label>';
+  h+='<label class="f">Prazo (mês)<input type="month" data-f="due" value="'+esc(d.due||"")+'"></label><label class="f">Data do evento ou da viagem (opcional)<input type="date" data-f="ev" value="'+esc(d.ev||"")+'"></label><label class="f">Já guardado hoje (R$)<input type="text" inputmode="decimal" data-f="base" value="'+fin(d.base)+'" placeholder="0,00"></label>';
   h+='<label class="f chk"><input type="checkbox" data-f="infl"'+(d.infl?' checked':'')+'> Corrigir o valor da meta pelo IPCA até o prazo</label>';
   h+='<button class="btn full" data-act="goalsave">Salvar meta</button>'+(d.id?'<button class="btn danger full" data-act="goaldel">Excluir meta</button>':'')+'<button class="btn sec full" data-act="close">Cancelar</button>';
   openSheet(h);
@@ -766,8 +951,11 @@ var A={
   },
   goaldel:function(){var id=draft.id;del(S.goals,id);S.cont.forEach(function(c){if(c.g===id&&!c.x){c.x=1;c.u=Date.now()}});save();closeSheet();goalId=null;render();toast("Meta excluída.")},
   contnew:function(){openCont()},
+  ach:function(){openAch()},
+  noday:function(){upsert(S.day,{id:today()});save();render();toast("Dia registrado como sem gastos.")},
+  noundo:function(){del(S.day,today());save();render()},
   contedit:function(e){openCont(find(S.cont,e.dataset.id))},
-  contsave:function(){var f=fields(),c=draft;c.v=parseMoney(f.v);if(!(c.v>0)){toast("Informe um valor.");return}c.d=f.d||today();c.n=f.n;if(!c.id)c.id=uid();upsert(S.cont,c);save();closeSheet();render();toast("Aporte registrado.")},
+  contsave:function(){var f=fields(),c=draft;c.v=parseMoney(f.v);if(!(c.v>0)){toast("Informe um valor.");return}c.d=f.d||today();c.n=f.n;if(!c.id)c.id=uid();var gb=find(S.goals,c.g),m0=gb?msCount(gb):0;upsert(S.cont,c);var m1=gb?msCount(gb):0;save();closeSheet();render();toast(gb&&m1>m0?'Marco de '+goalMs(gb)[m1-1].p+'% alcançado: '+gb.name+'.':"Aporte registrado.")},
   contdel:function(){del(S.cont,draft.id);save();closeSheet();render()},
   simgoal:function(e){var g=find(S.goals,e.dataset.id);if(!g)return;var n=goalNeed(g),s=simS();s.goalId=g.id;s.target=n.tg/100;s.p0=n.sv/100;s.months=Math.max(1,Math.min(240,n.n||12));s.pmt=Math.round(n.pmt)||0;s.preset="cdb";s.real=false;s.growth=0;s.u=Date.now();save();tab="sim";goalId=null;render();window.scrollTo(0,0)},
   preset:function(e){var s=simS();s.preset=e.dataset.id;s.u=Date.now();save();render()},
@@ -847,11 +1035,13 @@ function unpack(txt){
 }
 /* mescla por registro (id + carimbo u): o mais novo vence; exclusões viajam como lápide (x) */
 function mergeList(a,b){var m={};(a||[]).forEach(function(x){m[x.id]=x});(b||[]).forEach(function(x){var y=m[x.id];if(!y||(x.u||0)>(y.u||0))m[x.id]=x});return Object.keys(m).map(function(k){return m[k]})}
+/* conquistas: vale a data de desbloqueio mais antiga */
+function mergeAch(a,b){var m={};(a||[]).concat(b||[]).forEach(function(x){var y=m[x.id];if(!y||(x.d||"")<(y.d||""))m[x.id]=x});return Object.keys(m).map(function(k){return m[k]})}
 function mergeObj(a,b){return (b&&(b.u||0)>((a&&a.u)||0))?b:a}
 function mergeState(L,R){
   var o=blank();
   o.cfg=mergeObj(L.cfg,R.cfg)||o.cfg;o.bud=mergeObj(L.bud,R.bud)||o.bud;o.sim=mergeObj(L.sim,R.sim)||null;
-  ["tx","rec","goals","cont"].forEach(function(k){o[k]=mergeList(L[k],R[k])});
+  ["tx","rec","goals","cont","day"].forEach(function(k){o[k]=mergeList(L[k],R[k])});o.ach=mergeAch(L.ach,R.ach);
   var b=blank().cfg;for(var k in b)if(o.cfg[k]===undefined)o.cfg[k]=b[k];
   o.updatedAt=Math.max(L.updatedAt||0,R.updatedAt||0);return o;
 }

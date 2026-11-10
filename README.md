@@ -33,6 +33,14 @@ A mesclagem é por lançamento: o registro mais recente vence, e exclusões tamb
 - **Esqueci o PIN** apaga todos os dados e ajustes daquele aparelho (inclusive a sincronização) e abre a criação de um novo acesso. Com a sincronização, reconecte para trazer os dados de volta.
 - **Limite honesto:** é uma trava de tela. Os dados continuam no armazenamento do navegador sem criptografia, e 4 dígitos têm só 10 mil combinações; quem tiver acesso técnico ao aparelho desbloqueado ou ao arquivo do navegador consegue contornar. Ela protege contra quem pega o celular, não contra quem o analisa.
 
+## Gamificação
+Tudo é calculado a partir dos lançamentos; só se gravam as datas das conquistas e os dias marcados "hoje sem gastos". Nada pune ou compara os dois: o jogo é do casal contra a meta.
+- **Sequência de registro:** dias seguidos com algum lançamento, aporte ou "hoje sem gastos". Fixos automáticos e acertos não contam. Lançar dias atrasados com a data certa recupera a sequência. Uma falha por trimestre é perdoada; a segunda zera.
+- **Meses no plano:** meses fechados em que a poupança atingiu a meta de poupança dos Ajustes. O mês corrente não entra. Uma falha por semestre é perdoada.
+- **Jornada da meta:** marcos de 25/50/75/100% com a data em que cada um foi cruzado, contagem regressiva (data do evento, se informada, ou fim do prazo) e ritmo (média dos aportes dos últimos 3 meses contra o aporte mensal necessário).
+- **Conquistas:** 14 selos (primeiro lançamento, 7 e 30 dias de registro, mês no azul, 3 e 6 meses no plano, orçamento fiel, primeiro aporte, "Dupla" quando os dois aportam no mesmo mês, meta a 50% e cumprida, reserva de 1/3/6 meses). O **nível do casal** segue a reserva: metas que não são viagem, medidas em meses do gasto médio.
+- Na sincronização a data de desbloqueio mais antiga prevalece, então os dois aparelhos concordam.
+
 ## Premissas e limites
 - Taxas editáveis em **Ajustes** (CDI, IPCA, abertura dos cenários, % do CDI das metas). Valores de partida de nov/2026: CDI 13,65% a.a. (Selic meta 13,75% menos 0,10 p.p.) e IPCA 4,5% a.a. Atualize quando mudarem.
 - Taxa anual vira mensal por equivalência `(1+a)^(1/12)-1`. IR regressivo por aporte (22,5% / 20% / 17,5% / 15%). Aportes entram no fim do mês.

@@ -1,6 +1,6 @@
 const fs=require("fs"),vm=require("vm"),assert=require("assert");
 const ctx={};vm.createContext(ctx);const html=fs.readFileSync(__dirname+"/../index.html","utf8");const a=html.indexOf("/* ===== NÚCLEO FINANCEIRO"),b=html.indexOf("/* ===== FIM DO NÚCLEO");if(a<0||b<0)throw new Error("núcleo não encontrado no index.html");vm.runInContext(html.slice(a,b),ctx);
-const {simulate,solvePmt,solveMonths,fvClosed,mRate,irRate,shares,balance,parseMoney}=ctx;
+const {simulate,solvePmt,solveMonths,fvClosed,mRate,irRate,shares,balance,parseMoney,dayAdd,dayDiff,logStreak,planStreak,milestones,streakScan}=ctx;
 let n=0;function ok(name,f){f();n++;console.log("ok -",name)}
 const near=(a,b,t,m)=>assert(Math.abs(a-b)<=t,(m||"")+" "+a+" vs "+b);
 
@@ -38,4 +38,35 @@ ok("divisão: só de quem pagou, só do outro e 60/40",()=>{
   assert.deepEqual(shares({v:10001,w:0,s:0},60),[6001,4000])});
 ok("receitas e tombstones não entram no saldo",()=>assert.equal(balance([{k:"i",v:9999,w:0},{k:"o",v:100,w:0,s:0,x:1}],50),0));
 ok("parseMoney",()=>{[["1.234,56",123456],["R$ 50",5000],["12,5",1250],["12.5",1250],["1.234",123400],["2.500.000",250000000],["",0],["abc",0],["0,99",99]].forEach(([i,o])=>assert.equal(parseMoney(i),o,i))});
+
+/* ---------- gamificação ---------- */
+const D=(...a)=>{const o={};a.forEach(d=>o[d]=true);return o};
+ok("datas: virada de mês/ano, ano bissexto e diferença em dias",()=>{
+  assert.equal(dayAdd("2026-02-28",1),"2026-03-01");assert.equal(dayAdd("2028-02-28",1),"2028-02-29");assert.equal(dayAdd("2026-12-31",1),"2027-01-01");assert.equal(dayAdd("2026-03-01",-1),"2026-02-28");
+  assert.equal(dayDiff("2026-11-10","2027-01-23"),74);assert.equal(dayDiff("2026-11-10","2026-11-10"),0);assert.equal(dayDiff("2026-11-10","2026-11-09"),-1)});
+ok("sequência de registro: dias seguidos até hoje",()=>{
+  const r=logStreak(D("2026-11-03","2026-11-04","2026-11-05"),"2026-11-05");assert.deepEqual([r.n,r.best,r.doneNow],[3,3,true])});
+ok("sequência: hoje ainda em aberto não quebra (ontem vale)",()=>{
+  const r=logStreak(D("2026-11-03","2026-11-04"),"2026-11-05");assert.deepEqual([r.n,r.best,r.doneNow],[2,2,false])});
+ok("sequência: uma falha isolada no trimestre é perdoada e não conta como dia",()=>{
+  const r=logStreak(D("2026-11-03","2026-11-04","2026-11-06","2026-11-07"),"2026-11-07");assert.deepEqual([r.n,r.best,r.freezeUsed],[4,4,true])});
+ok("sequência: segunda falha no mesmo trimestre zera",()=>{
+  const r=logStreak(D("2026-11-01","2026-11-02","2026-11-04","2026-11-06","2026-11-07"),"2026-11-07");assert.deepEqual([r.n,r.best],[2,3])});
+ok("sequência: duas falhas seguidas zeram",()=>{
+  const r=logStreak(D("2026-11-01","2026-11-02","2026-11-05"),"2026-11-05");assert.deepEqual([r.n,r.best],[1,2])});
+ok("sequência: a folga renova a cada trimestre (31/12 e 03/01 perdoados)",()=>{
+  const r=logStreak(D("2026-12-30","2027-01-01","2027-01-02","2027-01-04"),"2027-01-04");assert.deepEqual([r.n,r.best],[4,4])});
+ok("sequência: sem registros = zero",()=>{const r=logStreak({},"2026-11-05");assert.deepEqual([r.n,r.best,r.doneNow],[0,0,false])});
+ok("sequência: dias futuros são ignorados",()=>{const r=logStreak(D("2026-11-05","2026-11-20"),"2026-11-05");assert.equal(r.n,1)});
+ok("meses no plano: o mês atual não entra e a folga é semestral",()=>{
+  let r=planStreak({"2026-01":true,"2026-02":true,"2026-03":true,"2026-04":true,"2026-05":true},"2026-01","2026-05");assert.deepEqual([r.n,r.best],[4,4]);
+  r=planStreak({"2026-01":true,"2026-02":true,"2026-04":true},"2026-01","2026-05");assert.deepEqual([r.n,r.best,r.freezeUsed],[3,3,true]);
+  r=planStreak({"2026-01":true,"2026-02":true,"2026-04":true},"2026-01","2026-07");assert.deepEqual([r.n,r.best],[0,3],"mar perdoado; mai é a 2ª falha do semestre e zera");
+  r=planStreak({},"2026-01","2026-01");assert.deepEqual([r.n,r.best],[0,0])});
+ok("marcos da meta: data do aporte que cruzou, valor inicial e meta zero",()=>{
+  const c=[{d:"2026-02-10",v:3000},{d:"2026-01-10",v:3000}];
+  let m=milestones(0,c,10000,[25,50,75,100]);
+  assert.deepEqual(m.map(x=>x.reached),[true,true,false,false]);assert.equal(m[0].date,"2026-01-10");assert.equal(m[1].date,"2026-02-10");assert.equal(m[1].amt,5000);
+  m=milestones(8000,c,10000,[25,50,75,100]);assert.deepEqual(m.map(x=>x.reached),[true,true,true,true]);assert.equal(m[2].date,null);
+  assert.equal(milestones(0,c,0,[25]).every(x=>!x.reached),true)});
 console.log("\n"+n+" testes passaram");
