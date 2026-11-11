@@ -550,16 +550,26 @@ var tab="home",month=today().slice(0,7),whoF=-1,goalId=null,draft=null,sheetKind
 
 /* ---------- fixos recorrentes: viram lançamentos com id determinístico (u=1: qualquer edição ou exclusão vence) ---------- */
 function ensureRec(){
-  var cur=today().slice(0,7),changed=false;
+  var cur=today().slice(0,7),hz=ymAdd(cur,11),changed=false;   /* gera o mês atual e os 11 seguintes, para dar para acompanhar os próximos meses */
   live(S.rec).forEach(function(r){
     var ym=r.from||cur,n=0;
-    while(ym<=cur&&n++<120){
+    while(ym<=hz&&n++<120){
       var id="r"+r.id+"_"+ym;
       if(!find(S.tx,id)){var nt={id:id,k:r.k,v:r.v,d:ym+"-"+pad(Math.min(r.day||1,dim(ym))),c:r.c,w:r.w,s:r.s||0,n:r.n,r:r.id,u:1},cc=r.cd?find(S.cards,r.cd):null;if(cc&&!cc.x){nt.cd=cc.id;nt.m=invoiceOf(nt.d,cc.close,cc.due).m}S.tx.push(nt);changed=true}
       ym=ymAdd(ym,1);
     }
   });
   if(changed)save();
+}
+
+function recPropagate(r,stop){   /* mexe só nos meses seguintes ao atual e só nos lançamentos que ninguém editou à mão (u===1) */
+  var cur=today().slice(0,7),cc=r.cd?find(S.cards,r.cd):null;
+  S.tx.forEach(function(t){
+    if(t.r!==r.id||t.x||t.u!==1||t.d.slice(0,7)<=cur)return;
+    if(stop){t.x=1;t.u=Date.now();return}
+    var ym=t.d.slice(0,7);t.v=r.v;t.n=r.n;t.c=r.c;t.s=r.s||0;t.w=r.w;t.d=ym+"-"+pad(Math.min(r.day||1,dim(ym)));
+    if(cc&&!cc.x)t.m=invoiceOf(t.d,cc.close,cc.due).m;
+  });
 }
 
 /* ---------- agregados ---------- */
@@ -662,28 +672,55 @@ function achCheck(){
   save();
   setTimeout(function(){toast(nw.length===1?"Conquista: "+nw[0].a.n+".":nw.length+" conquistas novas. Veja em Conquistas, na tela inicial.")},2800);
 }
+/* ---------- replicar o mês nos próximos ---------- */
+function repCands(ym){return monthTx(ym).filter(function(t){return (t.k==="i"||t.k==="o")&&!t.r&&!t.ip})}
+function repNudge(){
+  var cur=today().slice(0,7),nx=ymAdd(cur,1);
+  if(month!==cur||!repCands(cur).length||monthTx(nx).length)return "";
+  return '<div class="card"><h4>'+ymTitle(nx)+' está vazio</h4><p class="note">Quer repetir nos próximos meses as receitas e contas que você lançou em '+ymLabel(cur)+'? Você escolhe quais.</p><button class="btn full" data-act="repopen">Replicar '+ymLabel(cur)+'</button></div>';
+}
+function openRep(){
+  var ym=month,ls=repCands(ym).sort(function(a,b){return a.d<b.d?-1:1});sheetKind="rep";
+  var h='<h3>Replicar '+ymLabel(ym)+'</h3><p class="note">Marque o que se repete todo mês. Cada item vira um <b>fixo</b> e passa a aparecer nos próximos 12 meses, no mesmo dia. Desmarque gastos que variam (mercado, lazer, transporte). Parcelas já se repetem sozinhas e não aparecem aqui.</p>';
+  if(!ls.length){openSheet(h+'<p class="empty">Nada para replicar neste mês.</p><button class="btn sec full" data-act="close">Fechar</button>');return}
+  ls.forEach(function(t){h+='<label class="f chk"><input type="checkbox" data-rep="'+t.id+'" checked> <span>'+(+t.d.slice(8,10))+' · '+esc(t.n||t.c)+' · '+esc(t.c)+' · <b>'+(t.k==="i"?'+':'−')+' '+brl(t.v)+'</b></span></label>'});
+  openSheet(h+'<div class="grid2"><button class="btn sec" data-act="repall" data-id="1">Marcar todos</button><button class="btn sec" data-act="repall" data-id="0">Desmarcar todos</button></div><button class="btn full" data-act="repgo">Replicar selecionados</button><button class="btn sec full" data-act="close">Cancelar</button>');
+}
+function repGo(){
+  var ym=month,ids=$$("#sheetBody [data-rep]").filter(function(i){return i.checked}).map(function(i){return i.dataset.rep}),n=0,sk=0;
+  ids.forEach(function(id){
+    var t=find(S.tx,id);if(!t||t.x)return;
+    var dup=live(S.rec).some(function(r){return r.k===t.k&&r.c===t.c&&(r.n||"")===(t.n||"")&&r.v===t.v&&r.w===t.w});
+    if(dup){sk++;return}
+    var rr={id:uid(),k:t.k,v:t.v,c:t.c,w:t.w,s:t.s||0,n:t.n||"",day:+t.d.slice(8,10),from:ymAdd(ym,1)};if(t.cd)rr.cd=t.cd;
+    upsert(S.rec,rr);t.r=rr.id;t.u=Date.now();n++;   /* o lançamento original passa a contar como fixo (projeção e diagnóstico) */
+  });
+  if(!ids.length){toast("Marque ao menos um item.");return}
+  ensureRec();save();closeSheet();render();toast(n+(n===1?" fixo criado":" fixos criados")+(sk?" ("+sk+" já existia"+(sk>1?"m":"")+")":"")+".");
+}
+
 /* ---------- diagnóstico financeiro (tela) ---------- */
 var diagWho=-1;
 function diagRun(ym,who){
   var cur=today().slice(0,7),sm=summary(ym,who),exp=sm.exp,partial=false,dn=new Date().getDate();
-  if(ym===cur&&dn<dim(ym))partial=true;   /* mês aberto: usa só o gasto até hoje (extrapolar gera alarme falso quando os gastos são concentrados) */
+  var future=ym>cur;if(future||(ym===cur&&dn<dim(ym)))partial=true;   /* mês aberto: usa só o gasto até hoje (extrapolar gera alarme falso quando os gastos são concentrados) */
   var prev=[];monthsSeen().filter(function(m){return m<ym}).slice(-3).forEach(function(m){var p=summary(m,who);if(p.exp>0)prev.push({exp:p.exp,cat:p.cat})});
   var rv=reserveInfo(),nx=summary(ymAdd(ym,1),who);
   var d=diagnose({inc:sm.inc,exp:exp,fixed:sm.fixed,cat:sm.cat,prev:prev,saveTarget:S.cfg.saveTarget,bud:who<0?S.bud.v:null,reserveM:who<0&&rv.avg>0?rv.m:null,reserveAvg:rv.avg,nextFixed:nx.fixed,partial:partial});
-  d.sm=sm;d.exp=exp;d.dn=dn;return d;
+  d.sm=sm;d.exp=exp;d.dn=dn;d.future=future;return d;
 }
 function diagCard(){
   var d=diagRun(month,-1);
   if(!d.ok)return '<div class="card"><div class="row sp"><h4>Diagnóstico financeiro</h4><button class="ghost" data-act="diag">Abrir</button></div><p class="note">Lance a renda do mês para ver a análise.</p></div>';
-  return '<div class="card"><div class="row sp"><h4>Diagnóstico financeiro</h4><button class="ghost" data-act="diag">Ver análise</button></div><div class="row sp"><span><b style="font-size:1.4rem">'+d.score+'</b><small>/100</small></span><span class="badge">'+d.level+'</span></div><p class="note">'+(d.rate<0?'Gastos acima da renda neste mês.':'Sobra de '+pc(d.rate)+' da renda'+(d.partial?' até hoje':'')+'.')+'</p></div>';
+  return '<div class="card"><div class="row sp"><h4>Diagnóstico financeiro</h4><button class="ghost" data-act="diag">Ver análise</button></div><div class="row sp"><span><b style="font-size:1.4rem">'+d.score+'</b><small>/100</small></span><span class="badge">'+d.level+'</span></div><p class="note">'+(d.rate<0?'Gastos acima da renda neste mês.':'Sobra de '+pc(d.rate)+' da renda'+(d.future?' (planejado)':d.partial?' até hoje':'')+'.')+'</p></div>';
 }
 function openDiag(){
   sheetKind="diag";var ym=month,d=diagRun(ym,diagWho);
   var h='<h3>Diagnóstico · '+ymTitle(ym)+'</h3><div class="seg p"><button data-act="dwho" data-id="-1" class="'+(diagWho<0?'on':'')+'">Casal</button><button data-act="dwho" data-id="0" class="a '+(diagWho===0?'on':'')+'">'+esc(NM(0))+'</button><button data-act="dwho" data-id="1" class="b '+(diagWho===1?'on':'')+'">'+esc(NM(1))+'</button></div>';
   if(!d.ok){h+='<p class="note">Sem receita lançada neste mês'+(diagWho>=0?' para '+esc(NM(diagWho)):'')+'. Lance a renda (tipo Receita) para eu calcular poupança, peso dos fixos e o resto.</p><button class="btn sec full" data-act="close">Fechar</button>';openSheet(h);return}
   var icon={ok:"Ok",warn:"Atenção",bad:"Ruim"};
-  h+='<div class="card"><div class="row sp"><div><div class="bigv">'+d.score+'</div><p class="note">de 100</p></div><span class="badge">'+d.level+'</span></div><p class="note">Receita <b>'+brl0(d.sm.inc)+'</b> · Despesa <b>'+brl0(d.exp)+'</b>'+(d.partial?' (até hoje)':'')+' · Saldo <b class="'+(d.sm.inc-d.exp<0?'neg':'pos')+'">'+brl0(d.sm.inc-d.exp)+'</b></p>'
-    +(d.partial?'<p class="note">Mês em andamento: a análise usa só o que já foi lançado até hoje. Ela fica mais fiel perto do fim do mês, e meses fechados são os mais confiáveis.</p>':'')+'</div>';
+  h+='<div class="card"><div class="row sp"><div><div class="bigv">'+d.score+'</div><p class="note">de 100</p></div><span class="badge">'+d.level+'</span></div><p class="note">Receita <b>'+brl0(d.sm.inc)+'</b> · Despesa <b>'+brl0(d.exp)+'</b>'+(d.future?' (planejado)':d.partial?' (até hoje)':'')+' · Saldo <b class="'+(d.sm.inc-d.exp<0?'neg':'pos')+'">'+brl0(d.sm.inc-d.exp)+'</b></p>'
+    +(d.future?'<p class="note">Mês futuro: considera só receitas, fixos e parcelas já lançados. Gastos variáveis ainda não entram, então a sobra aparece maior do que tende a ser.</p>':d.partial?'<p class="note">Mês em andamento: a análise usa só o que já foi lançado até hoje. Ela fica mais fiel perto do fim do mês, e meses fechados são os mais confiáveis.</p>':'')+'</div>';
   d.items.forEach(function(i){h+='<div class="card"><div class="row sp"><h4>'+esc(i.title)+'</h4><span class="badge">'+icon[i.sev]+(i.max?' · '+i.pts+'/'+i.max:'')+'</span></div><p class="note">'+esc(i.txt)+'</p></div>'});
   if(d.top.length)h+='<div class="card"><h4>Onde mais pesou</h4><p class="note">'+d.top.map(function(x){return esc(x[0])+' <b>'+brl0(x[1])+'</b>'}).join(' · ')+'</p></div>';
   h+='<div class="card"><h4>Como melhorar</h4>'+(d.actions.length?'<ul class="note" style="margin:6px 0 0;padding-left:18px">'+d.actions.map(function(a){return '<li>'+esc(a)+'</li>'}).join('')+'</ul>':'<p class="note">Nada crítico agora. Mantenha o ritmo e use o excedente para as metas.</p>')+'</div>';
@@ -704,7 +741,7 @@ function gameCard(){
 }
 function commitCard(){   /* parcelas e faturas já lançadas para meses futuros */
   var cur=today().slice(0,7),by={},tot=0;
-  S.tx.forEach(function(t){if(t.x||t.k!=="o")return;var m=tm(t);if(m>cur){by[m]=(by[m]||0)+t.v;tot+=t.v}});
+  S.tx.forEach(function(t){if(t.x||t.k!=="o"||t.r)return;var m=tm(t);if(m>cur){by[m]=(by[m]||0)+t.v;tot+=t.v}});
   var ms=Object.keys(by).sort();if(!ms.length)return "";
   var top=0;ms.forEach(function(m){top=Math.max(top,by[m])});
   var h='<div class="card"><div class="row sp"><h4>Comprometido</h4><b>'+brl0(tot)+'</b></div><p class="note">Parcelas e faturas já lançadas para os próximos meses.</p>';
@@ -757,7 +794,7 @@ function catBars(sum,limits,max){
   }).join('');
 }
 function balanceInfo(){
-  var b=balance(live(S.tx),S.cfg.split);
+  var td=today(),b=balance(live(S.tx).filter(function(t){return !(t.r&&t.d>td)}),S.cfg.split);   /* fixo automático de data futura ainda não foi pago */
   if(Math.abs(b)<1)return {b:0,txt:'Vocês estão quites.',debtor:-1};
   return b>0?{b:b,txt:NM(1)+' deve <b>'+brl(b)+'</b> a '+NM(0)+'.',debtor:1}:{b:b,txt:NM(0)+' deve <b>'+brl(-b)+'</b> a '+NM(1)+'.',debtor:0};
 }
@@ -780,6 +817,7 @@ function vHome(){
     h+='<p class="note">Projeção de fechamento: <b>'+brl0(proj)+'</b> <span title="fixos + média diária dos gastos variáveis × dias do mês">(fixos + ritmo diário dos variáveis)</span>'+(bt>0&&proj>bt?' · <span class="neg">acima do orçamento em '+brl0(proj-bt)+'</span>':'')+'.</p>';
   }
   h+='</div>';
+  h+=repNudge();
   h+=diagCard();
   h+=gameCard();
   h+=commitCard();
@@ -1029,10 +1067,10 @@ function saveTx(){
 
 /* ---------- folha: fixos, orçamento ---------- */
 function openFixos(){
-  var rs=live(S.rec),h='<h3>Lançamentos fixos</h3><p class="note">Entram sozinhos todo mês (aluguel, assinaturas, salário). Mudar o valor aqui vale para os próximos meses; os já lançados não mudam.</p>';
+  var rs=live(S.rec),h='<h3>Lançamentos fixos</h3><p class="note">Entram sozinhos todo mês, já com os próximos 11 meses preenchidos (aluguel, assinaturas, salário). Mudar o valor aqui vale para os meses seguintes ao atual; o que já foi lançado ou editado à mão não muda.</p>';
   if(!rs.length)h+='<p class="empty">Nenhum fixo ainda. Ao lançar algo, marque <b>Repetir todo mês</b>.</p>';
   rs.forEach(function(r){h+='<button class="tx" data-act="recedit" data-id="'+r.id+'"><span class="ico">'+esc((r.c||"?").slice(0,2).toUpperCase())+'</span><span class="grow"><div class="t1">'+esc(r.n||r.c)+'</div><div class="t2"><span>todo dia '+r.day+'</span><span class="badge '+(r.w===0?'a':'b')+'">'+esc(NM(r.w))+'</span></div></span><span class="v '+(r.k==="i"?'pos':'')+'">'+(r.k==="i"?'+':'−')+' '+brl(r.v)+'</span></button>'});
-  openSheet(h+'<button class="btn sec full" data-act="close">Fechar</button>');sheetKind="fixos";
+  openSheet(h+'<button class="btn full" data-act="repopen">Replicar lançamentos de '+ymLabel(month)+' nos próximos meses</button><button class="btn sec full" data-act="close">Fechar</button>');sheetKind="fixos";
 }
 function openCard(c){
   draft=c?clone(c):{id:"",name:"",close:5,due:12,w:ME()};sheetKind="card";
@@ -1120,8 +1158,8 @@ var A={
   settle:function(){var b=balanceInfo();openTx(null,{k:"t",w:b.debtor,v:Math.abs(b.b)})},
   fixos:function(){openFixos()},
   recedit:function(e){openRec(e.dataset.id)},
-  recsave:function(){var f=fields(),r=draft;r.v=parseMoney(f.v);if(!(r.v>0)){toast("Informe um valor.");return}r.n=f.n;r.c=f.c;r.day=Math.max(1,Math.min(31,parseInt(f.day,10)||1));if(f.s!=null)r.s=+f.s;upsert(S.rec,r);save();openFixos();render()},
-  recdel:function(){del(S.rec,draft.id);save();openFixos();render()},
+  recsave:function(){var f=fields(),r=draft;r.v=parseMoney(f.v);if(!(r.v>0)){toast("Informe um valor.");return}r.n=f.n;r.c=f.c;r.day=Math.max(1,Math.min(31,parseInt(f.day,10)||1));if(f.s!=null)r.s=+f.s;upsert(S.rec,r);recPropagate(r,false);save();openFixos();render()},
+  recdel:function(){del(S.rec,draft.id);recPropagate(draft,true);save();openFixos();render()},
   cat:function(e){if(whoF<0)openBud(e.dataset.id)},
   budsave:function(){var v=parseMoney(fields().v);if(v>0)S.bud.v[draft.cat]=v;else delete S.bud.v[draft.cat];S.bud.u=Date.now();save();closeSheet();render()},
   goal:function(e){goalId=e.dataset.id;tab="metas";render();window.scrollTo(0,0)},
@@ -1141,6 +1179,9 @@ var A={
   contnew:function(){openCont()},
   ach:function(){openAch()},
   diag:function(){openDiag()},
+  repopen:function(){openRep()},
+  repall:function(e){$$("#sheetBody [data-rep]").forEach(function(i){i.checked=e.dataset.id==="1"})},
+  repgo:function(){repGo()},
   dwho:function(e){diagWho=+e.dataset.id;openDiag()},
   gotom:function(e){month=e.dataset.id;tab="gastos";goalId=null;render();window.scrollTo(0,0)},
   cardnew:function(){openCard()},

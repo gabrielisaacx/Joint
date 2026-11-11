@@ -59,3 +59,6 @@ Ao mudar o app, aumente a versão do cache em `sw.js` (`joint-v1` → `joint-v2`
 
 ## Diagnóstico financeiro
 Na Home, o cartão **Diagnóstico financeiro** abre uma análise do mês (Casal, Gabriel ou Dayse) com nota de 0 a 100: Boa (75+), Atenção (50 a 74) ou Crítica (abaixo de 50). Critérios e pesos: poupança vs. meta (30), fixos e parcelas sobre a renda, folga até 35% (20), essenciais x desejos pela regra 50/30/20 (20), reserva de emergência em meses de gasto, só no casal (20) e tendência vs. média dos 3 meses anteriores (10). Gastar mais que a renda limita a nota a 49. Tudo é calculado no aparelho, por regras fixas, sem IA e sem enviar dados. Mês em andamento usa só o gasto até hoje. É um guia geral, não recomendação financeira personalizada.
+
+## Fixos nos próximos meses
+Fixos (marcados com "Repetir todo mês") aparecem no mês atual e nos 11 seguintes, para dar para acompanhar dezembro, janeiro etc. Editar o valor em Fixos muda só os meses seguintes ao atual e só os lançamentos que ninguém editou à mão; "Parar este fixo" remove os futuros e mantém o histórico. Para lançamentos que já existem, use **Fixos > Replicar lançamentos do mês** (ou o cartão que aparece na Home quando o mês seguinte está vazio): você escolhe quais viram fixos. Fixos de datas futuras não entram no saldo entre vocês nem no cartão Comprometido.
