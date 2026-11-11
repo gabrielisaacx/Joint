@@ -434,6 +434,69 @@ function parcelRate(avista, total, n) {
   for (var it = 0; it < 200; it++) { var mid = (lo + hi) / 2; if (f(mid) > 0) lo = mid; else hi = mid; }
   return (lo + hi) / 2;
 }
+
+/* ---------- diagnóstico financeiro (regras, sem IA, tudo no aparelho) ----------
+   Entrada em centavos. Cada critério tem peso (max) e nota (pts); a nota final é a soma de pts / soma de max dos critérios aplicáveis.
+   Referências: poupança = meta do casal (padrão 20%, regra 50/30/20); compromissos fixos <= 35% da renda é folga, > 50% é aperto
+   (limite usual de endividamento/comprometimento); reserva de emergência 3 a 6 meses de gastos; tendência vs. média dos meses anteriores. */
+var DIAG_NEEDS=["Moradia","Mercado","Transporte","Saúde","Educação","Casa"];
+var DIAG_WANTS=["Restaurantes","Lazer","Viagem","Assinaturas","Pessoal","Presentes"];
+function diagnose(o){
+  var items=[],act=[],inc=o.inc||0,exp=o.exp||0,t=(o.saveTarget==null?20:o.saveTarget)/100;
+  var R=function(c){return "R$ "+Math.round(Math.abs(c)/100).toLocaleString("pt-BR")},P=function(x){return Math.round(x*100)+"%"};
+  function add(id,sev,pts,max,title,txt){items.push({id:id,sev:sev,pts:pts,max:max,title:title,txt:txt})}
+  if(inc<=0)return {ok:false,reason:"sem-renda"};
+  var rate=(inc-exp)/inc,cl=function(x,a,b){return Math.max(a,Math.min(b,x))};
+  /* 1. poupança */
+  var s1=rate>=t?"ok":rate>=t/2?"warn":"bad";
+  add("save",s1,rate>=0?Math.round(30*cl(rate/t,0,1)):0,30,"Poupança do mês",
+    rate<0?"Você gastou "+R(exp-inc)+" a mais do que ganhou ("+P(exp/inc)+" da renda). Gastar mais que a renda consome reserva ou gera dívida."
+    :"Sobrou "+P(rate)+" da renda ("+R(inc-exp)+"). A meta é "+P(t)+" (regra 50/30/20: 20% para o futuro)."+(rate>=t?" Meta batida.":""));
+  if(rate<t){var gap=exp-inc*(1-t);act.push("Para chegar à meta de "+P(t)+" de poupança faltam "+R(gap)+" por mês: corte de despesas, aumento de renda ou os dois.")}
+  /* 2. compromissos fixos */
+  var f=o.fixed/inc,s2=f<=.35?"ok":f<=.5?"warn":"bad";
+  add("fixed",s2,Math.round(20*cl((0.7-f)/0.35,0,1)),20,"Compromissos fixos",
+    "Fixos e parcelas somam "+R(o.fixed)+" ("+P(f)+" da renda). Até 35% dá folga; acima de 50% sobra pouco para imprevistos e para poupar, porque esse valor já está comprometido antes do mês começar.");
+  if(f>.35)act.push("Reduza o peso dos fixos ("+P(f)+" da renda): renegocie contratos, evite novas parcelas e antecipe a quitação das maiores. Meta: abaixo de 35%.");
+  if(o.nextFixed>0&&o.nextFixed/inc>.5)act.push("O mês seguinte já tem "+R(o.nextFixed)+" comprometidos ("+P(o.nextFixed/inc)+" da renda deste mês). Evite novas parcelas até aliviar.");
+  /* 3. 50/30/20 */
+  var nd=0,wn=0,un=0;for(var c in o.cat){var v=o.cat[c];if(DIAG_NEEDS.indexOf(c)>=0)nd+=v;else if(DIAG_WANTS.indexOf(c)>=0)wn+=v;else un+=v}
+  if(nd+wn>0){
+    var en=Math.max(0,nd/inc-.5),ew=Math.max(0,wn/inc-.3),s3=en+ew===0?"ok":en+ew<=.1?"warn":"bad";
+    add("rule",s3,Math.round(20*cl(1-(en+ew)/0.3,0,1)),20,"Essenciais x desejos",
+      "Essenciais (moradia, mercado, transporte, saúde, educação, casa): "+P(nd/inc)+" da renda (ideal até 50%). Desejos (restaurantes, lazer, viagem, assinaturas, pessoal, presentes): "+P(wn/inc)+" (ideal até 30%)."+(un>0?" Fora dessa conta: "+R(un)+" em Outros/categorias próprias.":""));
+    if(ew>0){var cut=wn-.3*inc;act.push("Desejos estão "+R(cut)+" acima de 30% da renda. Um corte de 20% nessa faixa libera "+R(wn*.2)+" por mês.")}
+    if(en>0)act.push("Essenciais passaram de 50% da renda ("+P(nd/inc)+"). Veja moradia, mercado e transporte: são onde há mais efeito.");
+  }
+  /* 4. reserva */
+  if(o.reserveM!=null&&o.reserveAvg>0){
+    var m=o.reserveM,s4=m>=6?"ok":m>=3?"warn":"bad";
+    add("reserve",s4,Math.round(20*(m>=6?1:m>=3?(.5+.5*(m-3)/3):.5*cl(m/3,0,1))),20,"Reserva de emergência",
+      "As metas (sem viagens) cobrem "+(Math.round(m*10)/10).toLocaleString("pt-BR")+" mês de gastos (média "+R(o.reserveAvg)+"/mês). O recomendado é de 3 a 6 meses, para aguentar perda de renda ou imprevisto.");
+    if(m<3){var need=3*o.reserveAvg-m*o.reserveAvg;act.push("Monte a reserva até 3 meses de gastos: faltam "+R(need)+". Em 12 meses, são "+R(need/12)+" por mês.")}
+  }
+  /* 5. tendência */
+  var pv=(o.prev||[]).filter(function(p){return p.exp>0});
+  if(pv.length){
+    var avg=pv.reduce(function(a,p){return a+p.exp},0)/pv.length,r=exp/avg,s5=r<=1.05?"ok":r<=1.15?"warn":"bad";
+    add("trend",s5,Math.round(10*cl((1.3-r)/0.25,0,1)),10,"Tendência de gastos",
+      "Gasto de "+R(exp)+" contra média de "+R(avg)+" dos "+pv.length+" mês(es) anteriores ("+(r>=1?"+":"−")+P(Math.abs(r-1))+").");
+    var up=[];for(var k in o.cat){var pa=pv.reduce(function(a,p){return a+((p.cat||{})[k]||0)},0)/pv.length,d=o.cat[k]-pa;if(d>=15000&&(pa===0||o.cat[k]/pa>=1.3))up.push([k,d])}
+    up.sort(function(a,b){return b[1]-a[1]});
+    if(up.length)add("up","warn",0,0,"Categorias que subiram",up.slice(0,3).map(function(x){return x[0]+" (+"+R(x[1])+")"}).join(", ")+" acima da média anterior.");
+    if(s5!=="ok"&&up.length)act.push("Os maiores aumentos vieram de "+up.slice(0,2).map(function(x){return x[0]}).join(" e ")+". Comece por aí.");
+  }
+  /* 6. orçamento */
+  var ov=[];for(var b in (o.bud||{})){if(o.bud[b]>0&&(o.cat[b]||0)>o.bud[b])ov.push([b,o.cat[b]-o.bud[b]])}
+  if(ov.length){ov.sort(function(a,b){return b[1]-a[1]});add("bud","warn",0,0,"Limites estourados",ov.map(function(x){return x[0]+" (+"+R(x[1])+")"}).join(", ")+".")}
+  /* nota */
+  var sp=0,sm=0;items.forEach(function(i){sp+=i.pts;sm+=i.max});
+  var score=sm?Math.round(sp/sm*100):0;if(rate<0)score=Math.min(score,49);
+  var lvl=score>=75?"Boa":score>=50?"Atenção":"Crítica";
+  var top=[];for(var q in o.cat)top.push([q,o.cat[q]]);top.sort(function(a,b){return b[1]-a[1]});
+  return {ok:true,score:score,level:lvl,rate:rate,items:items,actions:act,top:top.slice(0,3),partial:!!o.partial};
+}
+
 /* ===== FIM DO NÚCLEO ===== */
 
 
@@ -599,6 +662,34 @@ function achCheck(){
   save();
   setTimeout(function(){toast(nw.length===1?"Conquista: "+nw[0].a.n+".":nw.length+" conquistas novas. Veja em Conquistas, na tela inicial.")},2800);
 }
+/* ---------- diagnóstico financeiro (tela) ---------- */
+var diagWho=-1;
+function diagRun(ym,who){
+  var cur=today().slice(0,7),sm=summary(ym,who),exp=sm.exp,partial=false,dn=new Date().getDate();
+  if(ym===cur&&dn<dim(ym))partial=true;   /* mês aberto: usa só o gasto até hoje (extrapolar gera alarme falso quando os gastos são concentrados) */
+  var prev=[];monthsSeen().filter(function(m){return m<ym}).slice(-3).forEach(function(m){var p=summary(m,who);if(p.exp>0)prev.push({exp:p.exp,cat:p.cat})});
+  var rv=reserveInfo(),nx=summary(ymAdd(ym,1),who);
+  var d=diagnose({inc:sm.inc,exp:exp,fixed:sm.fixed,cat:sm.cat,prev:prev,saveTarget:S.cfg.saveTarget,bud:who<0?S.bud.v:null,reserveM:who<0&&rv.avg>0?rv.m:null,reserveAvg:rv.avg,nextFixed:nx.fixed,partial:partial});
+  d.sm=sm;d.exp=exp;d.dn=dn;return d;
+}
+function diagCard(){
+  var d=diagRun(month,-1);
+  if(!d.ok)return '<div class="card"><div class="row sp"><h4>Diagnóstico financeiro</h4><button class="ghost" data-act="diag">Abrir</button></div><p class="note">Lance a renda do mês para ver a análise.</p></div>';
+  return '<div class="card"><div class="row sp"><h4>Diagnóstico financeiro</h4><button class="ghost" data-act="diag">Ver análise</button></div><div class="row sp"><span><b style="font-size:1.4rem">'+d.score+'</b><small>/100</small></span><span class="badge">'+d.level+'</span></div><p class="note">'+(d.rate<0?'Gastos acima da renda neste mês.':'Sobra de '+pc(d.rate)+' da renda'+(d.partial?' até hoje':'')+'.')+'</p></div>';
+}
+function openDiag(){
+  sheetKind="diag";var ym=month,d=diagRun(ym,diagWho);
+  var h='<h3>Diagnóstico · '+ymTitle(ym)+'</h3><div class="seg p"><button data-act="dwho" data-id="-1" class="'+(diagWho<0?'on':'')+'">Casal</button><button data-act="dwho" data-id="0" class="a '+(diagWho===0?'on':'')+'">'+esc(NM(0))+'</button><button data-act="dwho" data-id="1" class="b '+(diagWho===1?'on':'')+'">'+esc(NM(1))+'</button></div>';
+  if(!d.ok){h+='<p class="note">Sem receita lançada neste mês'+(diagWho>=0?' para '+esc(NM(diagWho)):'')+'. Lance a renda (tipo Receita) para eu calcular poupança, peso dos fixos e o resto.</p><button class="btn sec full" data-act="close">Fechar</button>';openSheet(h);return}
+  var icon={ok:"Ok",warn:"Atenção",bad:"Ruim"};
+  h+='<div class="card"><div class="row sp"><div><div class="bigv">'+d.score+'</div><p class="note">de 100</p></div><span class="badge">'+d.level+'</span></div><p class="note">Receita <b>'+brl0(d.sm.inc)+'</b> · Despesa <b>'+brl0(d.exp)+'</b>'+(d.partial?' (até hoje)':'')+' · Saldo <b class="'+(d.sm.inc-d.exp<0?'neg':'pos')+'">'+brl0(d.sm.inc-d.exp)+'</b></p>'
+    +(d.partial?'<p class="note">Mês em andamento: a análise usa só o que já foi lançado até hoje. Ela fica mais fiel perto do fim do mês, e meses fechados são os mais confiáveis.</p>':'')+'</div>';
+  d.items.forEach(function(i){h+='<div class="card"><div class="row sp"><h4>'+esc(i.title)+'</h4><span class="badge">'+icon[i.sev]+(i.max?' · '+i.pts+'/'+i.max:'')+'</span></div><p class="note">'+esc(i.txt)+'</p></div>'});
+  if(d.top.length)h+='<div class="card"><h4>Onde mais pesou</h4><p class="note">'+d.top.map(function(x){return esc(x[0])+' <b>'+brl0(x[1])+'</b>'}).join(' · ')+'</p></div>';
+  h+='<div class="card"><h4>Como melhorar</h4>'+(d.actions.length?'<ul class="note" style="margin:6px 0 0;padding-left:18px">'+d.actions.map(function(a){return '<li>'+esc(a)+'</li>'}).join('')+'</ul>':'<p class="note">Nada crítico agora. Mantenha o ritmo e use o excedente para as metas.</p>')+'</div>';
+  h+='<p class="note"><b>Como a nota é feita</b>: soma de critérios com peso. Poupança 30, fixos e parcelas 20, essenciais x desejos (50/30/20) 20, reserva de emergência 20 (só no casal), tendência de gastos 10. Critérios sem dados saem da conta. Gastar mais que a renda limita a nota a 49. A classificação em essencial ou desejo usa as categorias padrão; categorias criadas por vocês ficam fora dessa conta. É um guia por regras gerais, não uma recomendação financeira personalizada.</p><button class="btn sec full" data-act="close">Fechar</button>';
+  openSheet(h);
+}
 function gameCard(){
   var t=today(),days=actDays(),ls=logStreak(days,t),pi=planInfo(),ps=pi.first?planStreak(pi.ok,pi.first,t.slice(0,7)):{n:0,best:0,freezeUsed:false};
   var got=achState().filter(function(s){return s.ok}).length,mk=find(S.day,t),marked=!!mk&&!mk.x;
@@ -689,6 +780,7 @@ function vHome(){
     h+='<p class="note">Projeção de fechamento: <b>'+brl0(proj)+'</b> <span title="fixos + média diária dos gastos variáveis × dias do mês">(fixos + ritmo diário dos variáveis)</span>'+(bt>0&&proj>bt?' · <span class="neg">acima do orçamento em '+brl0(proj-bt)+'</span>':'')+'.</p>';
   }
   h+='</div>';
+  h+=diagCard();
   h+=gameCard();
   h+=commitCard();
   var bi=balanceInfo();
@@ -1048,6 +1140,8 @@ var A={
   goaldel:function(){var id=draft.id;del(S.goals,id);S.cont.forEach(function(c){if(c.g===id&&!c.x){c.x=1;c.u=Date.now()}});save();closeSheet();goalId=null;render();toast("Meta excluída.")},
   contnew:function(){openCont()},
   ach:function(){openAch()},
+  diag:function(){openDiag()},
+  dwho:function(e){diagWho=+e.dataset.id;openDiag()},
   gotom:function(e){month=e.dataset.id;tab="gastos";goalId=null;render();window.scrollTo(0,0)},
   cardnew:function(){openCard()},
   cardedit:function(e){var c=find(S.cards,e.dataset.id);if(c)openCard(c)},

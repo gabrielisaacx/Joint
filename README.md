@@ -56,3 +56,6 @@ Tudo é calculado a partir dos lançamentos; só se gravam as datas das conquist
 ## Desenvolvimento
 O código financeiro está entre os marcadores `NÚCLEO FINANCEIRO` e `FIM DO NÚCLEO` no `index.html` e tem testes: `node tests/core.test.js`.
 Ao mudar o app, aumente a versão do cache em `sw.js` (`joint-v1` → `joint-v2`) para o celular atualizar.
+
+## Diagnóstico financeiro
+Na Home, o cartão **Diagnóstico financeiro** abre uma análise do mês (Casal, Gabriel ou Dayse) com nota de 0 a 100: Boa (75+), Atenção (50 a 74) ou Crítica (abaixo de 50). Critérios e pesos: poupança vs. meta (30), fixos e parcelas sobre a renda, folga até 35% (20), essenciais x desejos pela regra 50/30/20 (20), reserva de emergência em meses de gasto, só no casal (20) e tendência vs. média dos 3 meses anteriores (10). Gastar mais que a renda limita a nota a 49. Tudo é calculado no aparelho, por regras fixas, sem IA e sem enviar dados. Mês em andamento usa só o gasto até hoje. É um guia geral, não recomendação financeira personalizada.
