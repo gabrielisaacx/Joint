@@ -58,7 +58,7 @@ O código financeiro está entre os marcadores `NÚCLEO FINANCEIRO` e `FIM DO N�
 Ao mudar o app, aumente a versão do cache em `sw.js` (`joint-v1` → `joint-v2`) para o celular atualizar.
 
 ## Diagnóstico financeiro
-Na Home, o cartão **Diagnóstico financeiro** abre uma análise do mês (Casal, Gabriel ou Dayse) com nota de 0 a 100: Boa (75+), Atenção (50 a 74) ou Crítica (abaixo de 50). Critérios e pesos: poupança vs. meta (30), fixos e parcelas sobre a renda, folga até 35% (20), essenciais x desejos pela regra 50/30/20 (20), reserva de emergência em meses de gasto, só no casal (20) e tendência vs. média dos 3 meses anteriores (10). Gastar mais que a renda limita a nota a 49. Tudo é calculado no aparelho, por regras fixas, sem IA e sem enviar dados. Mês em andamento usa só o gasto até hoje. É um guia geral, não recomendação financeira personalizada.
+Na Home, o cartão **Diagnóstico financeiro** abre uma análise do mês (casal ou cada pessoa) com nota de 0 a 100: Boa (75+), Atenção (50 a 74) ou Crítica (abaixo de 50). Critérios e pesos: poupança vs. meta (30), fixos e parcelas sobre a renda, folga até 35% (20), essenciais x desejos pela regra 50/30/20 (20), reserva de emergência em meses de gasto, só no casal (20) e tendência vs. média dos 3 meses anteriores (10). Gastar mais que a renda limita a nota a 49. Tudo é calculado no aparelho, por regras fixas, sem IA e sem enviar dados. Mês em andamento usa só o gasto até hoje. É um guia geral, não recomendação financeira personalizada.
 
 ## Fixos nos próximos meses
 Fixos (marcados com "Repetir todo mês") aparecem no mês atual e nos 11 seguintes, para dar para acompanhar dezembro, janeiro etc. Editar o valor em Fixos muda só os meses seguintes ao atual e só os lançamentos que ninguém editou à mão; "Parar este fixo" remove os futuros e mantém o histórico. Para lançamentos que já existem, use **Fixos > Replicar lançamentos do mês** (ou o cartão que aparece na Home quando o mês seguinte está vazio): você escolhe quais viram fixos. Fixos de datas futuras não entram no saldo entre vocês nem no cartão Comprometido.
@@ -79,3 +79,19 @@ Em Ajustes > Sincronização, defina uma **senha de criptografia** (8+ caractere
 
 ## Auditoria das contas (nov/2026)
 Corrigido: (1) editar um fixo agora carimba os lançamentos futuros, para o outro aparelho receber o valor novo; (2) "Entre vocês" conta só despesas com data até hoje, sem parcelas e fixos a vencer; (3) a projeção de fechamento não multiplica pelo ritmo diário a fatura de compras do mês anterior; (4) no diagnóstico, a tendência só pontua com o mês fechado; (5) nuvem ilegível nunca é sobrescrita.
+
+## Novidades (joint-v14)
+- **Lançamento rápido:** ao abrir um novo lançamento aparecem os nomes mais usados; ao digitar, sugestões com categoria e último valor. Um toque preenche tudo.
+- **Busca:** em Gastos, o campo de busca procura nome, categoria ou cartão em todos os meses e soma as despesas encontradas.
+- **Categorias:** em Ajustes > Categorias dá para renomear, excluir, definir limite e marcar cada uma como essencial, desejo ou outro (usado na regra 50/30/20 do diagnóstico).
+- **E se…:** em Metas, simula em quantos meses cada meta fecha guardando mais por mês.
+- **Limites sugeridos:** em Gastos, propõe limites pela média dos últimos meses fechados e pela meta de poupança; se a média não cabe, reduz só a parte variável, na mesma proporção.
+- **Backup e planilha:** exportação em CSV (ponto e vírgula, vírgula decimal) e lembrete de backup a cada 30 dias quando a sincronização está desligada.
+- **Sincronização:** todo envio agora baixa e mescla antes de gravar; limites são mesclados por categoria; replicar o mesmo item nos dois aparelhos gera um fixo só.
+- Os nomes padrão no código são genéricos ("Pessoa 1" e "Pessoa 2").
+
+## Código-fonte e testes
+O `index.html` publicado é gerado a partir de `src/`: `template.html`, `style.css`, `core.js` (regras financeiras puras) e `app/*.js` (telas, em ordem alfabética).
+- Gerar: `node src/build.js index.html`
+- Testes das regras: `node tests/core.test.js`
+- Testes de tela (Playwright + Chrome, servindo a pasta em `localhost:8123`): `python3 tests/ui/<nome>.py`

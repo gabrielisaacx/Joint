@@ -258,6 +258,13 @@ b.big{font-family:var(--display);font-weight:600;font-size:1.5rem;line-height:1}
 .week{margin-top:-2px}
 .empty{padding:10px 8px;margin:0;font-size:.86rem}
 
+/* ===== chips, busca ===== */
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips:empty{display:none}
+.chip{border:1px solid var(--line);background:var(--surface2);border-radius:999px;padding:8px 12px;font-size:.8rem;font-weight:600;color:var(--muted);min-height:38px;text-align:left}
+.chip b{color:var(--fg);font-weight:800}.chip small{font-weight:600;opacity:.8}
+input[type=search]{width:100%;background:var(--surface2);border:1px solid var(--line);border-radius:14px;padding:10px 14px;min-height:44px;font-size:16px;color:var(--fg);-webkit-appearance:none;appearance:none}
+
 </style>
 </head>
 <body>
@@ -496,11 +503,11 @@ function diagnose(o){
   if(f>.35)act.push("Reduza o peso dos fixos ("+P(f)+" da renda): renegocie contratos, evite novas parcelas e antecipe a quitação das maiores. Meta: abaixo de 35%.");
   if(o.nextFixed>0&&o.nextFixed/inc>.5)act.push("O mês seguinte já tem "+R(o.nextFixed)+" comprometidos ("+P(o.nextFixed/inc)+" da renda deste mês). Evite novas parcelas até aliviar.");
   /* 3. 50/30/20 */
-  var nd=0,wn=0,un=0;for(var c in o.cat){var v=o.cat[c];if(DIAG_NEEDS.indexOf(c)>=0)nd+=v;else if(DIAG_WANTS.indexOf(c)>=0)wn+=v;else un+=v}
+  var nd=0,wn=0,un=0;for(var c in o.cat){var v=o.cat[c];var kd=(o.kind||{})[c]||(DIAG_NEEDS.indexOf(c)>=0?"n":DIAG_WANTS.indexOf(c)>=0?"w":"o");if(kd==="n")nd+=v;else if(kd==="w")wn+=v;else un+=v}
   if(nd+wn>0){
     var en=Math.max(0,nd/inc-.5),ew=Math.max(0,wn/inc-.3),s3=en+ew===0?"ok":en+ew<=.1?"warn":"bad";
     add("rule",s3,Math.round(20*cl(1-(en+ew)/0.3,0,1)),20,"Essenciais x desejos",
-      "Essenciais (moradia, mercado, transporte, saúde, educação, casa): "+P(nd/inc)+" da renda (ideal até 50%). Desejos (restaurantes, lazer, viagem, assinaturas, pessoal, presentes): "+P(wn/inc)+" (ideal até 30%)."+(un>0?" Fora dessa conta: "+R(un)+" em Outros/categorias próprias.":""));
+      "Essenciais: "+P(nd/inc)+" da renda (ideal até 50%). Desejos (restaurantes, lazer, viagem, assinaturas, pessoal, presentes): "+P(wn/inc)+" (ideal até 30%)."+(un>0?" Fora dessa conta: "+R(un)+" em categorias marcadas como Outro.":""));
     if(ew>0){var cut=wn-.3*inc;act.push("Desejos estão "+R(cut)+" acima de 30% da renda. Um corte de 20% nessa faixa libera "+R(wn*.2)+" por mês.")}
     if(en>0)act.push("Essenciais passaram de 50% da renda ("+P(nd/inc)+"). Veja moradia, mercado e transporte: são onde há mais efeito.");
   }
@@ -532,6 +539,54 @@ function diagnose(o){
   var lvl=score>=75?"Boa":score>=50?"Atenção":"Crítica";
   var top=[];for(var q in o.cat)top.push([q,o.cat[q]]);top.sort(function(a,b){return b[1]-a[1]});
   return {ok:true,score:score,level:lvl,rate:rate,items:items,actions:act,top:top.slice(0,3),partial:!!o.partial};
+}
+
+
+/* ---------- orçamento sugerido ----------
+   avgCat: média de gasto por categoria; fixedCat: quanto dessa média é fixo ou parcela (não dá para cortar no curto prazo);
+   income: renda média; targetPct: meta de poupança. Se a média total cabe em renda x (1 - meta), o limite é a própria média
+   (arredondada para cima em R$ 10). Se não cabe, só a parte variável é reduzida, na mesma proporção em todas as categorias. */
+function suggestBudget(avgCat, fixedCat, income, targetPct) {
+  var allowed = Math.round(income * (1 - targetPct / 100)), tot = 0, fx = 0, k, out = {}, sum = 0;
+  for (k in avgCat) { var f0 = Math.min(avgCat[k], (fixedCat || {})[k] || 0); tot += avgCat[k]; fx += f0; }
+  var vt = tot - fx, f = 1;
+  if (income > 0 && tot > allowed && vt > 0) f = Math.max(0, (allowed - fx) / vt);
+  for (k in avgCat) {
+    var fk = Math.min(avgCat[k], (fixedCat || {})[k] || 0), v = fk + (avgCat[k] - fk) * f;
+    out[k] = f < 1 ? Math.round(v / 1000) * 1000 : Math.ceil(v / 1000) * 1000; sum += out[k];
+  }
+  return { lim: out, total: sum, avg: tot, allowed: allowed, factor: f, feasible: income <= 0 || fx <= allowed };
+}
+
+/* ---------- cenário "e se": meses até cada meta guardando "monthly" e guardando "monthly + extra" (centavos) ----------
+   Cada linha supõe todo o valor mensal indo para aquela meta; a linha total junta todas. Rende a rateAA, com IR regressivo. */
+function whatIf(goals, monthly, extra, rateAA) {
+  function mo(saved, target, pm) {
+    if (saved >= target) return 0;
+    if (!(pm > 0) && !(saved > 0)) return null;
+    return solveMonths({ p0: saved / 100, pmt: pm / 100, growth: 0, rate: rateAA, infl: 0, ir: true, begin: false }, target / 100, 600);
+  }
+  var rows = [], ts = 0, tt = 0;
+  goals.forEach(function (g) {
+    if (!(g.target > 0)) return; ts += Math.min(g.saved, g.target); tt += g.target;
+    rows.push({ name: g.name, left: Math.max(0, g.target - g.saved), m0: mo(g.saved, g.target, monthly), m1: mo(g.saved, g.target, monthly + extra) });
+  });
+  return { rows: rows, total: rows.length > 1 ? { left: tt - ts, m0: mo(ts, tt, monthly), m1: mo(ts, tt, monthly + extra) } : null };
+}
+
+/* ---------- sugestões de lançamento: nomes já usados, o mais frequente primeiro (empate: o mais recente) ---------- */
+function normTxt(s) { return String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim(); }
+function quickPicks(list, q, n) {
+  var by = {}, nq = normTxt(q);
+  list.forEach(function (t) {
+    var key = normTxt(t.n); if (!key || t.x) return;
+    if (nq && key.indexOf(nq) < 0) return;
+    var o = by[key]; if (!o) o = by[key] = { cnt: 0, t: t, pre: nq && key.indexOf(nq) === 0 ? 1 : 0 };
+    o.cnt++; if (t.d > o.t.d || (t.d === o.t.d && (t.u || 0) > (o.t.u || 0))) o.t = t;
+  });
+  var a = Object.keys(by).map(function (k) { return by[k]; });
+  a.sort(function (x, y) { return y.pre - x.pre || y.cnt - x.cnt || (x.t.d < y.t.d ? 1 : x.t.d > y.t.d ? -1 : 0); });
+  return a.slice(0, n || 4).map(function (o) { return o.t; });
 }
 
 /* ===== FIM DO NÚCLEO ===== */
@@ -570,7 +625,7 @@ var KEY="joint.v1",MEKEY="joint.me",SYKEY="joint.sync",THKEY="joint.theme";
 var EXP=["Moradia","Mercado","Restaurantes","Transporte","Saúde","Lazer","Viagem","Assinaturas","Educação","Casa","Pessoal","Presentes","Outros"];
 var INC=["Salário","Extra","Rendimentos","Outros"];
 var TRIP=["Passagens","Hospedagem","Alimentação","Transporte local","Passeios","Seguro viagem","Compras e lembranças"];
-function blank(){return {cfg:{names:["Gabriel","Dayse"],split:50,saveTarget:20,cdi:13.65,infl:4.5,spread:2,goalPct:100,cats:EXP.slice(),u:0},tx:[],rec:[],goals:[],cont:[],day:[],ach:[],cards:[],bud:{v:{},u:0},sim:null,updatedAt:0}}
+function blank(){return {cfg:{names:["Pessoa 1","Pessoa 2"],catk:{},split:50,saveTarget:20,cdi:13.65,infl:4.5,spread:2,goalPct:100,cats:EXP.slice(),u:0},tx:[],rec:[],goals:[],cont:[],day:[],ach:[],cards:[],bud:{v:{},t:{},u:0},sim:null,updatedAt:0}}
 function load(){var d=blank();try{var r=JSON.parse(localStorage.getItem(KEY));if(r&&typeof r==="object"){for(var k in d)if(r[k]!==undefined)d[k]=r[k];var b=blank().cfg;for(k in b)if(d.cfg[k]===undefined)d.cfg[k]=b[k]}}catch(e){}return d}
 var S=load(),saveT=null;
 function persist(){clearTimeout(saveT);saveT=null;try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
@@ -730,11 +785,67 @@ function repGo(){
     var t=find(S.tx,id);if(!t||t.x)return;
     var dup=live(S.rec).some(function(r){return r.k===t.k&&r.c===t.c&&(r.n||"")===(t.n||"")&&r.v===t.v&&r.w===t.w});
     if(dup){sk++;return}
-    var rr={id:uid(),k:t.k,v:t.v,c:t.c,w:t.w,s:t.s||0,n:t.n||"",day:+t.d.slice(8,10),from:ymAdd(ym,1)};if(t.cd)rr.cd=t.cd;
+    var rr={id:"x"+t.id,k:t.k,v:t.v,c:t.c,w:t.w,s:t.s||0,n:t.n||"",day:+t.d.slice(8,10),from:ymAdd(ym,1)};   /* id derivado do lançamento: se os dois replicarem o mesmo item, vira um fixo só */if(t.cd)rr.cd=t.cd;
     upsert(S.rec,rr);t.r=rr.id;t.u=Date.now();n++;   /* o lançamento original passa a contar como fixo (projeção e diagnóstico) */
   });
   if(!ids.length){toast("Marque ao menos um item.");return}
   ensureRec();save();closeSheet();render();toast(n+(n===1?" fixo criado":" fixos criados")+(sk?" ("+sk+" já existia"+(sk>1?"m":"")+")":"")+".");
+}
+
+/* ---------- cenário "e se" ---------- */
+function closedAvg(){   /* médias dos até 3 últimos meses fechados com gasto (casal) */
+  var cur=today().slice(0,7),ms=monthsSeen().filter(function(m){return m<cur&&summary(m,-1).exp>0}).slice(-3),base=ms.length?ms:[cur];
+  var o={n:ms.length,inc:0,exp:0,cat:{},fix:{}};
+  base.forEach(function(m){var sm=summary(m,-1);o.inc+=sm.inc;o.exp+=sm.exp;for(var k in sm.cat)o.cat[k]=(o.cat[k]||0)+sm.cat[k];
+    monthTx(m).forEach(function(t){if(t.k==="o"&&(t.r||t.ip))o.fix[t.c]=(o.fix[t.c]||0)+t.v})});
+  var d=base.length;o.inc=Math.round(o.inc/d);o.exp=Math.round(o.exp/d);for(var k in o.cat)o.cat[k]=Math.round(o.cat[k]/d);for(k in o.fix)o.fix[k]=Math.round(o.fix[k]/d);
+  return o;
+}
+function openIf(){
+  var a=closedAvg(),sv=Math.max(0,a.inc-a.exp),wants=0;for(var k in a.cat)if(catKind(k)==="w")wants+=a.cat[k];
+  sheetKind="wif";
+  var h='<h3>E se…</h3><p class="note">Veja em quantos meses cada meta fecha se vocês guardarem mais por mês.</p>'
+    +'<div class="grid2"><label class="f">Guardam hoje (R$/mês)<input type="text" inputmode="decimal" data-f="wm" value="'+fin(sv)+'" placeholder="0,00" autocomplete="off"></label><label class="f">A mais por mês (R$)<input type="text" inputmode="decimal" data-f="wx" value="" placeholder="0,00" autocomplete="off"></label></div>'
+    +'<p class="note">"Guardam hoje" veio da sobra média '+(a.n?'dos '+a.n+(a.n>1?' últimos meses fechados':' último mês fechado'):'do mês atual (ainda sem mês fechado)')+'. Pode ajustar.</p>';
+  if(wants>0)h+='<div class="chips"><button type="button" class="chip" data-act="wifx" data-id="'+Math.round(wants*.1)+'">Cortar 10% dos desejos · '+brl0(wants*.1)+'</button><button type="button" class="chip" data-act="wifx" data-id="'+Math.round(wants*.2)+'">Cortar 20% · '+brl0(wants*.2)+'</button></div>';
+  h+='<div id="wifo"></div><p class="note">Cada linha supõe todo o valor mensal indo para aquela meta, rendendo '+pc(goalRate(),2)+' ao ano com IR regressivo (mesma premissa das metas). "Todas" junta as metas numa conta só.</p><button class="btn sec full" data-act="close">Fechar</button>';
+  openSheet(h);wifOut();
+}
+function wifOut(){
+  var box=$("#wifo");if(!box)return;var f=fields(),m=parseMoney(f.wm),x=parseMoney(f.wx);
+  var gs=live(S.goals).map(function(g){var n=goalNeed(g);return {name:g.name,target:n.tn,saved:n.sv}}).filter(function(g){return g.target>0});
+  if(!gs.length){box.innerHTML='<p class="empty">Crie uma meta na aba Metas para simular aqui.</p>';return}
+  var r=whatIf(gs,m,x,goalRate()),ml=function(v){return v===null?'não chega':v===0?'pronta':mLabel(v)};
+  function row(nm,o){var gain=o.m0!==null&&o.m1!==null?o.m0-o.m1:0;return '<div class="card" style="gap:4px"><div class="row sp"><b>'+esc(nm)+'</b><span class="note">faltam '+brl0(o.left)+'</span></div><div class="row sp"><span class="note">Hoje: <b>'+ml(o.m0)+'</b></span>'+(x>0?'<span class="note">Com mais '+brl0(x)+': <b>'+ml(o.m1)+'</b>'+(gain>0?' <span class="badge">−'+mLabel(gain)+'</span>':o.m0===null&&o.m1!==null?' <span class="badge">passa a fechar</span>':'')+'</span>':'')+'</div></div>'}
+  box.innerHTML=r.rows.map(function(o){return row(o.name,o)}).join('')+(r.total?row("Todas as metas",r.total):'');
+}
+/* ---------- orçamento sugerido ---------- */
+function openSug(){
+  var a=closedAvg(),r=suggestBudget(a.cat,a.fix,a.inc,S.cfg.saveTarget),cats=Object.keys(r.lim).sort(function(x,y){return r.lim[y]-r.lim[x]});
+  sheetKind="sug";draft={lim:r.lim};
+  var h='<h3>Limites sugeridos</h3>';
+  if(!cats.length){openSheet(h+'<p class="empty">Ainda não há gastos para basear a sugestão.</p><button class="btn sec full" data-act="close">Fechar</button>');return}
+  h+='<p class="note">Base: média por categoria '+(a.n?'dos '+a.n+(a.n>1?' últimos meses fechados':' último mês fechado'):'do mês atual (ainda sem mês fechado)')+'. Renda média '+brl0(a.inc)+', meta de poupança '+S.cfg.saveTarget+'%, então o teto de gastos é <b>'+brl0(r.allowed)+'</b>.</p>';
+  h+='<p class="note">'+(a.inc<=0?'Sem renda lançada: usei a média de cada categoria como limite.':r.factor>=1?'A média de vocês ('+brl0(r.avg)+') já cabe no teto: cada limite é a própria média, arredondada para cima.':r.feasible?'A média ('+brl0(r.avg)+') passa do teto. Mantive fixos e parcelas e reduzi a parte variável de cada categoria em <b>'+pc(1-r.factor)+'</b>.':'Só os fixos e parcelas já passam do teto. Os limites abaixo zeram a parte variável; o caminho é rever os fixos ou a meta de poupança.')+'</p>';
+  cats.forEach(function(c){h+='<div class="row sp"><span>'+esc(c)+' <small class="note">média '+brl0(a.cat[c])+'</small></span><b>'+brl0(r.lim[c])+'</b></div>'});
+  h+='<div class="row sp"><span><b>Total</b></span><b>'+brl0(r.total)+'</b></div><p class="note">Aplicar substitui os limites dessas categorias. Dá para ajustar cada um depois.</p><button class="btn full" data-act="sugok">Aplicar limites</button><button class="btn sec full" data-act="close">Cancelar</button>';
+  openSheet(h);
+}
+/* ---------- exportar CSV e lembrete de backup ---------- */
+function dl(name,type,txt){var b=new Blob([txt],{type:type}),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500)}
+function csvText(){
+  var q=function(v){v=String(v==null?"":v);if(/^[=+\-@]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"'},rows=[["Data","Tipo","Descrição","Categoria","Valor","Quem","Divisão","Cartão","Parcela","Fixo","Mês de competência"].map(q).join(";")];
+  live(S.tx).slice().sort(function(a,b){return a.d<b.d?-1:a.d>b.d?1:0}).forEach(function(t){
+    rows.push([dBR(t.d),t.k==="i"?"Receita":t.k==="o"?"Despesa":"Acerto",t.n||"",t.k==="t"?"":t.c,(t.v/100).toFixed(2).replace(".",","),NM(t.w),t.k==="o"?(t.s===0?"Casal":"Só "+NM(t.s===1?t.w:1-t.w)):"",t.cd?cardName(t.cd):"",t.ip?t.in+"/"+t.it:"",t.r?"Sim":"",tm(t)].map(q).join(";"))});
+  return "\ufeff"+rows.join("\r\n");   /* BOM + ponto e vírgula + vírgula decimal: abre direto no Excel e no Google Sheets em português */
+}
+function exportCsv(){dl("joint-lancamentos-"+today()+".csv","text/csv;charset=utf-8",csvText());toast("Planilha exportada.")}
+function backupNudge(){
+  if(sync.st!=="off"||month!==today().slice(0,7))return "";
+  var n=0;S.tx.forEach(function(t){if(!t.x&&!(t.r&&t.u===1))n++});if(n<10)return "";
+  var g=function(k){return +localStorage.getItem(k)||0},last=g("joint.bkp"),D=86400000;
+  if(Date.now()-last<30*D||Date.now()-g("joint.bkps")<7*D)return "";
+  return '<div class="card"><h4>Backup</h4><p class="note">'+(last?'Último backup há '+Math.floor((Date.now()-last)/D)+' dias.':'Vocês ainda não fizeram backup.')+' Os dados ficam só neste aparelho: se ele quebrar ou o navegador limpar os dados, perde tudo.</p><div class="grid2"><button class="btn" data-act="export">Fazer backup</button><button class="btn sec" data-act="bksnooze">Agora não</button></div></div>';
 }
 
 /* ---------- diagnóstico financeiro (tela) ---------- */
@@ -744,7 +855,7 @@ function diagRun(ym,who){
   var future=ym>cur;if(future||(ym===cur&&dn<dim(ym)))partial=true;   /* mês aberto: usa só o gasto até hoje (extrapolar gera alarme falso quando os gastos são concentrados) */
   var prev=[];monthsSeen().filter(function(m){return m<ym}).slice(-3).forEach(function(m){var p=summary(m,who);if(p.exp>0)prev.push({exp:p.exp,cat:p.cat})});
   var rv=reserveInfo(),nx=summary(ymAdd(ym,1),who);
-  var d=diagnose({inc:sm.inc,exp:exp,fixed:sm.fixed,cat:sm.cat,prev:prev,saveTarget:S.cfg.saveTarget,bud:who<0?S.bud.v:null,reserveM:who<0&&rv.avg>0?rv.m:null,reserveAvg:rv.avg,nextFixed:nx.fixed,partial:partial});
+  var d=diagnose({inc:sm.inc,exp:exp,fixed:sm.fixed,cat:sm.cat,prev:prev,saveTarget:S.cfg.saveTarget,bud:who<0?S.bud.v:null,kind:S.cfg.catk||{},reserveM:who<0&&rv.avg>0?rv.m:null,reserveAvg:rv.avg,nextFixed:nx.fixed,partial:partial});
   d.sm=sm;d.exp=exp;d.dn=dn;d.future=future;return d;
 }
 function diagCard(){
@@ -762,8 +873,8 @@ function openDiag(){
   h+='<div class="card"><h4>Nota mês a mês</h4>'+scoreHist(ym,diagWho)+'</div>';
   d.items.forEach(function(i){h+='<div class="card"><div class="row sp"><h4>'+esc(i.title)+'</h4><span class="badge">'+icon[i.sev]+(i.max?' · '+i.pts+'/'+i.max:'')+'</span></div>'+(i.max?'<div class="bar"><i style="width:'+(i.pts/i.max*100).toFixed(1)+'%"></i></div>':'')+'<p class="note">'+esc(i.txt)+'</p></div>'});
   if(d.top.length)h+='<div class="card"><h4>Onde mais pesou</h4><p class="note">'+d.top.map(function(x){return esc(x[0])+' <b>'+brl0(x[1])+'</b>'}).join(' · ')+'</p></div>';
-  h+='<div class="card"><h4>Como melhorar</h4>'+(d.actions.length?'<ul class="note" style="margin:6px 0 0;padding-left:18px">'+d.actions.map(function(a){return '<li>'+esc(a)+'</li>'}).join('')+'</ul>':'<p class="note">Nada crítico agora. Mantenha o ritmo e use o excedente para as metas.</p>')+'</div>';
-  h+='<p class="note"><b>Como a nota é feita</b>: soma de critérios com peso. Poupança 30, fixos e parcelas 20, essenciais x desejos (50/30/20) 20, reserva de emergência 20 (só no casal), tendência de gastos 10 (só com o mês fechado). Critérios sem dados saem da conta. Gastar mais que a renda limita a nota a 49. A classificação em essencial ou desejo usa as categorias padrão; categorias criadas por vocês ficam fora dessa conta. É um guia por regras gerais, não uma recomendação financeira personalizada.</p><button class="btn sec full" data-act="close">Fechar</button>';
+  h+='<div class="card"><h4>Como melhorar</h4>'+(d.actions.length?'<ul class="note" style="margin:6px 0 0;padding-left:18px">'+d.actions.map(function(a){return '<li>'+esc(a)+'</li>'}).join('')+'</ul>':'<p class="note">Nada crítico agora. Mantenha o ritmo e use o excedente para as metas.</p>')+'<button class="ghost" data-act="wif">Simular: e se guardarmos mais?</button></div>';
+  h+='<p class="note"><b>Como a nota é feita</b>: soma de critérios com peso. Poupança 30, fixos e parcelas 20, essenciais x desejos (50/30/20) 20, reserva de emergência 20 (só no casal), tendência de gastos 10 (só com o mês fechado). Critérios sem dados saem da conta. Gastar mais que a renda limita a nota a 49. Cada categoria pode ser marcada como essencial, desejo ou outro em Ajustes > Categorias; as criadas por vocês começam como outro. É um guia por regras gerais, não uma recomendação financeira personalizada.</p><button class="btn sec full" data-act="close">Fechar</button>';
   openSheet(h);
 }
 function gameCard(){
@@ -941,6 +1052,7 @@ function vHome(){
   }
   h+='</div>';
   h+=repNudge();
+  h+=backupNudge();
   h+=chartsCard();
   h+=diagCard();
   var bi=balanceInfo();
@@ -963,24 +1075,37 @@ function vGastos(){
   h+='<div class="seg p"><button data-act="who" data-id="-1" class="'+(whoF<0?'on':'')+'">Casal</button><button data-act="who" data-id="0" class="a '+(whoF===0?'on':'')+'">'+esc(NM(0))+'</button><button data-act="who" data-id="1" class="b '+(whoF===1?'on':'')+'">'+esc(NM(1))+'</button></div>';
   var sav=sm.inc>0?(sm.inc-sm.exp)/sm.inc:null,cav=catAvg(ym,whoF);
   h+='<div class="grid2"><div class="stat"><span>Receitas</span><b class="pos">'+brl0(sm.inc)+'</b></div><div class="stat"><span>Despesas</span><b>'+brl0(sm.exp)+'</b></div><div class="stat"><span>Saldo</span><b class="'+(sm.inc-sm.exp<0?'neg':'')+'">'+brl0(sm.inc-sm.exp)+'</b></div><div class="stat"><span>Taxa de poupança</span><b>'+(sav==null?'–':pc(sav))+'</b></div></div>';
-  h+='<div class="card"><div class="row sp"><h4>Por categoria</h4><button class="ghost" data-act="fixos">Fixos</button></div>'+catBars(sm,whoF<0,0,cav)+(cav?'<div class="legendrow"><span><u class="tk s"></u>Média dos '+cav._n+(cav._n>1?' meses anteriores':' mês anterior')+'</span>'+(whoF<0?'<span><u class="tk l s"></u>Limite</span>':'')+'</div>':'')+(whoF<0&&Object.keys(sm.cat).length?'<p class="note">Toque em uma categoria para definir o limite mensal do casal.</p>':'')+'</div>';
+  h+='<div class="card"><div class="row sp"><h4>Por categoria</h4><button class="ghost" data-act="fixos">Fixos</button></div>'+catBars(sm,whoF<0,0,cav)+(cav?'<div class="legendrow"><span><u class="tk s"></u>Média dos '+cav._n+(cav._n>1?' meses anteriores':' mês anterior')+'</span>'+(whoF<0?'<span><u class="tk l s"></u>Limite</span>':'')+'</div>':'')+(whoF<0?'<div class="row sp"><p class="note">Toque em uma categoria para definir o limite.</p><button class="ghost" data-act="sug">Sugerir limites</button></div>':'')+'</div>';
   var cds=live(S.cards);
   if(cds.length){h+='<div class="card"><h4>Faturas</h4>';cds.forEach(function(c){var its=monthTx(ym).filter(function(t){return t.cd===c.id&&t.k==="o"}),tot=its.reduce(function(a,t){return a+t.v},0);h+='<div class="row sp"><span><b>'+esc(c.name)+'</b> <span class="note">vence '+pad(Math.min(c.due,dim(ym)))+'/'+ym.slice(5,7)+' · '+its.length+(its.length===1?' item':' itens')+'</span></span><b>'+brl(tot)+'</b></div>'});h+='<p class="note">Compras no cartão entram no mês em que a fatura vence. A data de cada item é a da compra.</p></div>'}
-  h+='<div class="card"><h4>Lançamentos</h4>';
-  if(!list.length)h+='<p class="empty">Sem lançamentos neste mês. Use o <b>+</b> para adicionar.</p>';
+  h+='<div class="card"><h4>Lançamentos</h4><input type="search" id="txq" value="'+esc(txQ)+'" placeholder="Buscar nome, categoria ou cartão (todos os meses)" autocomplete="off" enterkeyhint="search"><div id="txl">'+txList()+'</div></div>';
+  return h+'</div>';
+}
+var txQ="";
+function txList(){
+  var q=normTxt(txQ),list,h='';
+  if(q){list=S.tx.filter(function(t){return !t.x&&normTxt((t.n||"")+" "+(t.k==="t"?"acerto":t.c)+" "+(t.cd?cardName(t.cd):"")+(t.r?" fixo":"")).indexOf(q)>=0});
+    list.sort(function(a,b){return a.d<b.d?1:a.d>b.d?-1:0});var tot=list.length,sum=0;list.forEach(function(t){if(t.k==="o")sum+=t.v});list=list.slice(0,80);
+    h+='<p class="note">'+tot+(tot===1?' resultado':' resultados')+' em todos os meses'+(sum?' · despesas somam <b>'+brl(sum)+'</b>':'')+(tot>80?' · mostrando os 80 mais recentes':'')+'.</p>';
+    if(!tot)return h;
+  }else{
+    list=monthTx(month).filter(function(t){return whoF<0||t.k==="t"?true:(t.k==="i"?t.w===whoF:shares(t,S.cfg.split)[whoF]>0)});
+    list.sort(function(a,b){return a.d<b.d?1:a.d>b.d?-1:(b.u||0)-(a.u||0)});
+    if(!list.length)return '<p class="empty">Sem lançamentos neste mês. Use o <b>+</b> para adicionar.</p>';
+  }
   var last="";
   list.forEach(function(t){
-    if(t.d!==last){last=t.d;h+='<div class="dayh">'+dayLabel(t.d)+'</div>'}
+    if(t.d!==last){last=t.d;h+='<div class="dayh">'+(q?dBR(t.d):dayLabel(t.d))+'</div>'}
     var sg=t.k==="i"?"+":t.k==="o"?"−":"↔";
     var tag=t.k==="o"?(t.s===0?'<span class="badge">÷ casal</span>':'<span class="badge">só '+esc(NM(t.s===1?t.w:1-t.w))+'</span>'):'';
     h+='<button class="tx" data-act="tx" data-id="'+t.id+'"><span class="ico">'+esc((t.k==="t"?"AC":t.c||"?").slice(0,2).toUpperCase())+'</span><span class="grow"><div class="t1">'+esc(t.n||(t.k==="t"?"Acerto entre o casal":t.c))+'</div><div class="t2"><span class="badge '+(t.w===0?'a':'b')+'">'+esc(NM(t.w))+'</span>'+(t.k==="t"?'<span>acerto</span>':'<span>'+esc(t.c)+'</span>')+tag+(t.ip?'<span class="badge">'+t.in+'/'+t.it+'</span>':'')+(t.cd?'<span class="badge">'+esc(cardName(t.cd))+'</span>':'')+(t.r?'<span class="badge">fixo</span>':'')+'</div></span><span class="v '+(t.k==="i"?'pos':'')+'">'+sg+' '+brl(t.v)+'</span></button>';
   });
-  return h+'</div></div>';
+  return h;
 }
 
 /* ---------- METAS ---------- */
 function vMetas(){
-  var gs=live(S.goals),h='<div class="view">'+top("Metas","Objetivos do casal")+'<button class="btn" data-act="goalnew">+ Nova meta</button>';
+  var gs=live(S.goals),h='<div class="view">'+top("Metas","Objetivos do casal")+'<div class="grid2"><button class="btn" data-act="goalnew">+ Nova meta</button><button class="btn sec" data-act="wif">E se…</button></div>';
   if(!gs.length)h+='<div class="card"><p class="empty">Crie metas como a viagem dos sonhos, a reserva de emergência ou a entrada de um imóvel. Em metas de viagem você monta o orçamento item a item.</p></div>';
   gs.forEach(function(g){
     var n=goalNeed(g);
@@ -1141,7 +1266,7 @@ function drawTx(){
   h+='<label class="f">Valor (R$)<input class="big" type="text" inputmode="decimal" data-f="v" value="'+fin(d.v)+'" placeholder="0,00" autocomplete="off"></label>';
   if(k==="t")h+='<p class="note">Registra que <b>'+esc(NM(d.w))+'</b> repassou o valor a <b>'+esc(NM(other))+'</b>. Isso quita (ou reduz) o saldo entre vocês e não entra em receitas nem despesas.</p>';
   else{
-    h+='<label class="f">Descrição<input type="text" data-f="n" value="'+esc(d.n)+'" placeholder="ex.: Mercado da semana" autocomplete="off"></label>';
+    h+='<label class="f">Descrição<input type="text" data-f="n" value="'+esc(d.n)+'" placeholder="ex.: Mercado da semana" autocomplete="off"></label>'+(isNew?'<div class="chips" id="qp"></div>':'');
     var cl=k==="i"?INC:S.cfg.cats;if(cl.indexOf(d.c)<0){d.c=cl[0]}
     h+='<label class="f">Categoria<select data-f="c">'+opts(cl,d.c)+'</select></label>';
   }
@@ -1157,7 +1282,7 @@ function drawTx(){
   if(isNew&&k!=="t")h+='<label class="f chk"><input type="checkbox" data-f="rep"'+(d.rep?' checked':'')+'> Repetir todo mês (dia '+(+d.d.slice(8,10))+')</label>';
   if(d.r)h+='<p class="note">Lançamento gerado por um fixo. Editar aqui altera só este mês; para mudar os próximos, use <b>Fixos</b> em Gastos.</p>';
   h+='<button class="btn full" data-act="txsave">Salvar</button>'+(isNew?'':'<button class="btn danger full" data-act="txdel">'+(d.ip?'Excluir só esta parcela':'Excluir')+'</button>'+(d.ip?'<button class="btn danger full" data-act="txdelnext">Excluir esta e as seguintes</button>':''))+'<button class="btn sec full" data-act="close">Cancelar</button>';
-  openSheet(h);parcHint();
+  openSheet(h);parcHint();qpDraw();
 }
 function parcHint(){
   var el=$("#parcHint");if(!el||sheetKind!=="tx")return;
@@ -1171,6 +1296,13 @@ function parcHint(){
     else if(av>0)h.push('O preço à vista informado não é menor que o parcelado.');
   }
   el.innerHTML=h.join(' ');
+}
+/* sugestões: lançamentos já feitos com nome parecido (ou os mais usados, com o campo vazio) */
+var qpList=[];
+function qpDraw(){
+  var box=$("#qp");if(!box||!draft)return;var k=draft.k,inp=$('#sheetBody [data-f="n"]'),q=inp?inp.value:"";
+  qpList=quickPicks(S.tx.filter(function(t){return !t.x&&t.k===k&&!(t.in>1)}),q,4).filter(function(t){return normTxt(t.n)!==normTxt(q)||!draft.v});
+  box.innerHTML=qpList.map(function(t,i){return '<button type="button" class="chip" data-act="qp" data-id="'+i+'"><b>'+esc(t.n)+'</b> '+esc(t.c)+' · '+brl0(t.v)+'</button>'}).join('');
 }
 function saveTx(){
   readTx();var d=draft;
@@ -1206,10 +1338,21 @@ function openRec(id){
     +(r.k==="o"?'<label class="f">Divisão<select data-f="s"><option value="0"'+(r.s===0?' selected':'')+'>Dividir entre o casal</option><option value="1"'+(r.s===1?' selected':'')+'>Só de '+esc(NM(r.w))+'</option><option value="2"'+(r.s===2?' selected':'')+'>Só de '+esc(NM(1-r.w))+'</option></select></label>':'')
     +'<button class="btn full" data-act="recsave">Salvar</button><button class="btn danger full" data-act="recdel">Parar este fixo</button><button class="btn sec full" data-act="fixos">Voltar</button>');
 }
+function catKind(c){return (S.cfg.catk||{})[c]||(DIAG_NEEDS.indexOf(c)>=0?"n":DIAG_WANTS.indexOf(c)>=0?"w":"o")}
 function openBud(cat){
-  draft={cat:cat};sheetKind="bud";
-  openSheet('<h3>Limite mensal · '+esc(cat)+'</h3><label class="f">Limite do casal (R$ por mês)<input class="big" type="text" inputmode="decimal" data-f="v" value="'+fin(S.bud.v[cat]||0)+'" placeholder="sem limite"></label><p class="note">Deixe vazio para remover o limite. A barra fica vermelha quando o gasto passa dele.</p><button class="btn full" data-act="budsave">Salvar</button><button class="btn sec full" data-act="close">Cancelar</button>');
+  draft={cat:cat};sheetKind="bud";var kd=catKind(cat),own=S.cfg.cats.indexOf(cat)>=0;
+  openSheet('<h3>Categoria · '+esc(cat)+'</h3><label class="f">Limite do casal (R$ por mês)<input class="big" type="text" inputmode="decimal" data-f="v" value="'+fin(S.bud.v[cat]||0)+'" placeholder="sem limite"></label>'
+    +'<label class="f">Tipo no diagnóstico<select data-f="kd"><option value="n"'+(kd==="n"?' selected':'')+'>Essencial (conta nos 50%)</option><option value="w"'+(kd==="w"?' selected':'')+'>Desejo (conta nos 30%)</option><option value="o"'+(kd==="o"?' selected':'')+'>Outro (fora da conta)</option></select></label>'
+    +(own?'<label class="f">Nome<input type="text" data-f="nm" value="'+esc(cat)+'" autocomplete="off"></label><p class="note">Renomear troca o nome em todos os lançamentos, fixos e no limite.</p>':'')
+    +'<button class="btn full" data-act="budsave">Salvar</button>'+(own?'<button class="btn danger full" data-act="catdel">Excluir categoria</button>':'')+'<button class="btn sec full" data-act="close">Cancelar</button>');
 }
+function renameCat(a,b){
+  var now=Date.now(),i=S.cfg.cats.indexOf(a);if(i>=0)S.cfg.cats[i]=b;
+  S.tx.forEach(function(t){if(t.k==="o"&&t.c===a){if(t.r&&t.u===1)t.a=1;t.c=b;t.u=now}});S.rec.forEach(function(r){if(r.k==="o"&&r.c===a){r.c=b;r.u=now}});
+  S.bud.t=S.bud.t||{};if(S.bud.v[a]){S.bud.v[b]=S.bud.v[a];S.bud.t[b]=now}S.bud.v[a]=0;S.bud.t[a]=now;
+  S.cfg.catk=S.cfg.catk||{};if(S.cfg.catk[a]){S.cfg.catk[b]=S.cfg.catk[a];delete S.cfg.catk[a]}
+}
+
 
 /* ---------- folha: metas ---------- */
 function openGoal(g){
@@ -1251,19 +1394,20 @@ function openCfg(){
     +'<p class="note">A divisão pode ser 50/50 ou proporcional à renda de cada um. Vale para despesas marcadas como "dividir entre o casal".</p>'
     +'<h4>Premissas de juros</h4><div class="grid2"><label class="f">CDI (% a.a.)<input type="text" inputmode="decimal" data-f="cdi" value="'+fnum(c.cdi)+'"></label><label class="f">IPCA (% a.a.)<input type="text" inputmode="decimal" data-f="infl" value="'+fnum(c.infl)+'"></label><label class="f">Cenários ± (p.p.)<input type="text" inputmode="decimal" data-f="spread" value="'+fnum(c.spread)+'"></label><label class="f">Metas: % do CDI<input type="text" inputmode="decimal" data-f="gpct" value="'+fnum(c.goalPct)+'"></label></div>'
     +'<p class="note">Referência em nov/2026: Selic meta de 13,75% a.a. (set/2026; confira a decisão mais recente do Copom), CDI ≈ Selic − 0,10 p.p. e IPCA 12 meses em torno de 4,5%. Atualize quando mudar.</p>'
+    +'<h4>Categorias</h4><div class="chips">'+S.cfg.cats.map(function(c){return '<button type="button" class="chip" data-act="cated" data-id="'+esc(c)+'">'+esc(c)+' <small>'+({n:"essencial",w:"desejo",o:"outro"})[catKind(c)]+'</small></button>'}).join('')+'</div><p class="note">Toque para renomear, excluir, definir o limite ou marcar como essencial ou desejo.</p>'
     +'<label class="f">Nova categoria de gasto<input type="text" data-f="newcat" placeholder="ex.: Pets"></label>'
     +'<h4>Aparência</h4><div class="seg"><button type="button" data-act="theme" data-id="auto">Auto</button><button type="button" data-act="theme" data-id="dark">Escuro</button><button type="button" data-act="theme" data-id="light">Claro</button></div>'
     +'<h4>Acesso</h4><p class="note">Usuário: <b>'+esc(AU().n||"")+'</b>. Bloquear o app depois de ficar fora dele por:</p><div class="seg">'+[[0,"Ao sair"],[1,"1 min"],[5,"5 min"],[15,"15 min"]].map(function(o){var m=AU().m==null?5:AU().m;return '<button type="button" data-act="lockmin" data-id="'+o[0]+'"'+(m===o[0]?' class="on"':'')+'>'+o[1]+'</button>'}).join('')+'</div><div class="grid2"><button class="btn sec" data-act="lock">Bloquear agora</button><button class="btn sec" data-act="pinchg">Alterar PIN</button></div>'
     +'<h4>Cartões de crédito</h4>'+(live(S.cards).map(function(c){return '<button class="tx" data-act="cardedit" data-id="'+c.id+'"><span class="ico">CC</span><span class="grow"><div class="t1">'+esc(c.name)+'</div><div class="t2"><span>fecha dia '+c.close+' · vence dia '+c.due+'</span><span class="badge '+(c.w===0?'a':'b')+'">'+esc(NM(c.w))+'</span></div></span></button>'}).join('')||'<p class="note">Nenhum cartão. Cadastre para lançar compras na fatura certa.</p>')+'<button type="button" class="ghost" data-act="cardnew">+ Novo cartão</button>'
-    +'<h4>Sincronização entre aparelhos ('+st+')</h4><label class="f">Link do Google Apps Script<input type="text" data-f="api" value="'+esc(sy.api||"")+'" placeholder="https://script.google.com/macros/s/.../exec"></label><div class="grid2"><label class="f">Código do casal<input type="text" data-f="sid" value="'+esc(sy.id||"")+'" placeholder="ex.: gabrielxdayse"></label><label class="f">PIN (4+)<input type="password" data-f="pin" value="'+esc(sy.pin||"")+'"></label></div>'
+    +'<h4>Sincronização entre aparelhos ('+st+')</h4><label class="f">Link do Google Apps Script<input type="text" data-f="api" value="'+esc(sy.api||"")+'" placeholder="https://script.google.com/macros/s/.../exec"></label><div class="grid2"><label class="f">Código do casal<input type="text" data-f="sid" value="'+esc(sy.id||"")+'" placeholder="ex.: nossocasal"></label><label class="f">PIN (4+)<input type="password" data-f="pin" value="'+esc(sy.pin||"")+'"></label></div>'
     +(sync.block&&sync.err?'<p class="note" style="color:var(--fg)"><b>Sincronização pausada.</b> '+esc(sync.err)+'</p>':'')+'<label class="f">Senha de criptografia (8+ caracteres)<input type="password" data-f="epw" autocomplete="new-password" placeholder="'+(sy.k?'ativa · em branco mantém a atual':'recomendada')+'"></label>'
     +'<p class="note">'+(sy.k?'<b>Criptografia ativa.</b> ':'')+'Com essa senha os dados saem do aparelho já embaralhados (AES-256) e a planilha guarda só texto ilegível. Use a mesma senha nos dois celulares. Ela não é o PIN e não tem recuperação: se esquecer, os dados continuam nos aparelhos e basta definir uma senha nova nos dois.'+(sy.k?' <button type="button" class="ghost" data-act="e2eoff">Remover criptografia</button>':'')+'</p>'
     +'<p class="note">Sem o link, tudo fica só neste aparelho. Passo a passo no README do repositório.</p>'
-    +'<button class="btn full" data-act="cfgsave">Salvar ajustes</button><div class="grid2"><button class="btn sec" data-act="export">Exportar backup</button><button class="btn sec" data-act="import">Importar backup</button></div><button class="btn danger full" data-act="wipe">Apagar dados deste aparelho</button><button class="btn sec full" data-act="close">Fechar</button>');
+    +'<button class="btn full" data-act="cfgsave">Salvar ajustes</button><div class="grid2"><button class="btn sec" data-act="export">Exportar backup</button><button class="btn sec" data-act="import">Importar backup</button></div><button class="btn sec full" data-act="csv">Exportar planilha (CSV)</button><button class="btn danger full" data-act="wipe">Apagar dados deste aparelho</button><button class="btn sec full" data-act="close">Fechar</button>');
 }
 function openWelcome(){
   sheetKind="welcome";
-  openSheet('<h3>Bem-vindos ao Joint</h3><p class="note">Controle de gastos, metas e simulador de investimento para o casal. Confirme os nomes e quem está neste aparelho.</p><div class="grid2"><label class="f">Nome 1<input type="text" data-f="n0" value="'+esc(S.cfg.names[0])+'"></label><label class="f">Nome 2<input type="text" data-f="n1" value="'+esc(S.cfg.names[1])+'"></label></div><label class="f">Quem usa este aparelho<select data-f="me"><option value="0">Nome 1</option><option value="1">Nome 2</option></select></label><button class="btn full" data-act="welcomesave">Começar</button>');
+  openSheet('<h3>Bem-vindos ao Joint</h3><p class="note">Controle de gastos, metas e simulador de investimento para o casal. Confirme os nomes e quem está neste aparelho.</p><div class="grid2"><label class="f">Nome 1<input type="text" data-f="n0" value="'+(S.cfg.names[0]==="Pessoa 1"?"":esc(S.cfg.names[0]))+'" placeholder="Pessoa 1"></label><label class="f">Nome 2<input type="text" data-f="n1" value="'+(S.cfg.names[1]==="Pessoa 2"?"":esc(S.cfg.names[1]))+'" placeholder="Pessoa 2"></label></div><label class="f">Quem usa este aparelho<select data-f="me"><option value="0">Nome 1</option><option value="1">Nome 2</option></select></label><button class="btn full" data-act="welcomesave">Começar</button>');
 }
 
 /* ---------- ações ---------- */
@@ -1286,7 +1430,11 @@ var A={
   recsave:function(){var f=fields(),r=draft;r.v=parseMoney(f.v);if(!(r.v>0)){toast("Informe um valor.");return}r.n=f.n;r.c=f.c;r.day=Math.max(1,Math.min(31,parseInt(f.day,10)||1));if(f.s!=null)r.s=+f.s;upsert(S.rec,r);recPropagate(r,false);save();openFixos();render()},
   recdel:function(){del(S.rec,draft.id);recPropagate(draft,true);save();openFixos();render()},
   cat:function(e){if(whoF<0)openBud(e.dataset.id)},
-  budsave:function(){var v=parseMoney(fields().v);if(v>0)S.bud.v[draft.cat]=v;else delete S.bud.v[draft.cat];S.bud.u=Date.now();save();closeSheet();render()},
+  budsave:function(){var f=fields(),v=parseMoney(f.v),c=draft.cat,now=Date.now();S.bud.t=S.bud.t||{};
+    if((S.bud.v[c]||0)!==(v>0?v:0)){S.bud.v[c]=v>0?v:0;S.bud.t[c]=now;S.bud.u=now}   /* 0 = sem limite (fica gravado para a mescla entre aparelhos saber que foi removido) */
+    S.cfg.catk=S.cfg.catk||{};if(f.kd&&f.kd!==catKind(c)){S.cfg.catk[c]=f.kd;S.cfg.u=now}
+    var nm=(f.nm||"").trim();if(nm&&nm!==c){if(S.cfg.cats.indexOf(nm)>=0){toast("Já existe uma categoria com esse nome.");return}renameCat(c,nm);S.cfg.u=now;S.bud.u=now}
+    save();closeSheet();render()},
   goal:function(e){goalId=e.dataset.id;tab="metas";render();window.scrollTo(0,0)},
   goalback:function(){goalId=null;render()},
   goalnew:function(){openGoal()},
@@ -1304,6 +1452,15 @@ var A={
   contnew:function(){openCont()},
   ach:function(){openAch()},
   diag:function(){openDiag()},
+  qp:function(e){var t=qpList[+e.dataset.id];if(!t)return;readTx();var d=draft;d.n=t.n;d.c=t.c;if(d.k==="o"){d.s=t.s||0;var cc=t.cd?find(S.cards,t.cd):null;d.cd=cc&&!cc.x?t.cd:""}if(!(d.v>0))d.v=t.v;drawTx();var vi=$('#sheetBody [data-f="v"]');if(vi){vi.focus();vi.select()}},
+  wif:function(){openIf()},
+  wifx:function(e){var i=$('#sheetBody [data-f="wx"]');if(i){i.value=fin(+e.dataset.id);wifOut()}},
+  sug:function(){openSug()},
+  sugok:function(){if(!draft||!draft.lim)return;var now=Date.now();S.bud.t=S.bud.t||{};for(var k in draft.lim){S.bud.v[k]=draft.lim[k];S.bud.t[k]=now}S.bud.u=now;save();closeSheet();render();toast("Limites aplicados.")},
+  catdel:function(){var c=draft.cat,i=S.cfg.cats.indexOf(c);if(S.cfg.cats.length<=1){toast("Mantenha ao menos uma categoria.");return}if(i>=0)S.cfg.cats.splice(i,1);S.cfg.u=Date.now();S.bud.v[c]=0;S.bud.t=S.bud.t||{};S.bud.t[c]=Date.now();S.bud.u=Date.now();save();closeSheet();render();toast("Categoria removida. Os lançamentos antigos continuam com ela.")},
+  cated:function(e){openBud(e.dataset.id)},
+  csv:function(){exportCsv()},
+  bksnooze:function(){try{localStorage.setItem("joint.bkps",String(Date.now()))}catch(x){}render()},
   e2eoff:function(){syPatch({k:undefined,e:undefined});e2eK=null;sync.block=false;openCfg();push().then(function(){toast("Criptografia removida. A nuvem voltou a guardar os dados abertos.")})},
   trend:function(e){trendSel=e.dataset.id;render()},
   ctab:function(e){chartTab=e.dataset.id;render()},
@@ -1341,7 +1498,7 @@ var A={
     if(conn&&epw){if(epw.length<8){toast("A senha de criptografia precisa de 8 caracteres ou mais.");return}if(!e2eOk()){toast("Este navegador não permite criptografia aqui (precisa de HTTPS).");return}}
     if(conn&&!epw&&old.k&&old.id===sid){ns.k=old.k;if(old.e)ns.e=1}   /* mantém a chave atual */
     function fin(direct){
-      try{localStorage.setItem(SYKEY,JSON.stringify(ns))}catch(e){}sync.block=false;
+      try{localStorage.setItem(SYKEY,JSON.stringify(ns))}catch(e){}sync.block=false;sync.logged=false;
       save();closeSheet();render();
       if(conn){sync.st="idle";(direct?push():pull()).then(function(){if(sync.st==="ok")toast(ns.k?"Sincronizado e criptografado.":"Sincronizado.")})}else{sync.st="off";updDot();toast("Ajustes salvos.")}
     }
@@ -1363,7 +1520,7 @@ var A={
       var salt=rnd(16);return hashPin(String(a.n).toLowerCase(),f.p1,salt).then(function(h2){a.s=salt;a.h=h2;a.f=0;a.t=0;auPut(a);closeSheet();toast("PIN alterado.")});
     });
   },
-  export:function(){var b=new Blob([JSON.stringify(S)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="joint-backup-"+today()+".json";document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500)},
+  export:function(){dl("joint-backup-"+today()+".json","application/json",JSON.stringify(S));try{localStorage.setItem("joint.bkp",String(Date.now()))}catch(x){}toast("Backup exportado. Guarde o arquivo fora do celular.");if(tab==="home"&&$("#sheet").hidden)render()},
   import:function(){$("#file").click()},
   wipe:function(){if(!confirm("Apagar TODOS os dados deste aparelho? Se a sincronização estiver ligada, eles voltam do servidor."))return;try{localStorage.removeItem(KEY)}catch(e){}S=blank();persist();closeSheet();render();toast("Dados apagados.")}
 };
@@ -1385,7 +1542,10 @@ document.addEventListener("input",function(ev){
   if(k==="months"){$$("[data-act=months]").forEach(function(b){b.classList.toggle("on",+b.dataset.id===s.months)})}
   simOut();
 });
-document.addEventListener("input",function(ev){var e=ev.target;if(sheetKind==="tx"&&e.dataset&&(e.dataset.f==="v"||e.dataset.f==="np"||e.dataset.f==="av"))parcHint()});
+document.addEventListener("input",function(ev){var e=ev.target;if(sheetKind==="tx"&&e.dataset&&(e.dataset.f==="v"||e.dataset.f==="np"||e.dataset.f==="av"))parcHint();
+  if(sheetKind==="tx"&&e.dataset&&e.dataset.f==="n")qpDraw();
+  if(sheetKind==="wif"&&e.dataset&&(e.dataset.f==="wm"||e.dataset.f==="wx"))wifOut();
+  if(e.id==="txq"){txQ=e.value;var l=$("#txl");if(l)l.innerHTML=txList()}});
 document.addEventListener("change",function(ev){
   if(sheetKind==="tx"&&ev.target.dataset&&(ev.target.dataset.f==="cd"||ev.target.dataset.f==="d"))parcHint();
   if(ev.target.id==="file"){
@@ -1416,16 +1576,23 @@ function unpack(txt){
 function mergeList(a,b){var m={};(a||[]).forEach(function(x){m[x.id]=x});(b||[]).forEach(function(x){var y=m[x.id];if(!y||(x.u||0)>(y.u||0))m[x.id]=x});return Object.keys(m).map(function(k){return m[k]})}
 /* conquistas: vale a data de desbloqueio mais antiga */
 function mergeAch(a,b){var m={};(a||[]).concat(b||[]).forEach(function(x){var y=m[x.id];if(!y||(x.d||"")<(y.d||""))m[x.id]=x});return Object.keys(m).map(function(k){return m[k]})}
+/* limites: mescla por categoria (t[c] = quando aquele limite mudou), para duas edições em categorias diferentes não se anularem */
+function mergeBud(a,b){
+  a=a||{v:{},t:{},u:0};b=b||{v:{},t:{},u:0};var o={v:{},t:{},u:Math.max(a.u||0,b.u||0)},ks={},k;
+  for(k in a.v||{})ks[k]=1;for(k in b.v||{})ks[k]=1;for(k in a.t||{})ks[k]=1;for(k in b.t||{})ks[k]=1;
+  for(k in ks){var ta=(a.t&&a.t[k])||((a.v&&k in a.v)?(a.u||0):-1),tb=(b.t&&b.t[k])||((b.v&&k in b.v)?(b.u||0):-1),w=tb>ta?b:a;o.v[k]=(w.v&&w.v[k])||0;o.t[k]=Math.max(ta,tb,0)}
+  return o;
+}
 function mergeObj(a,b){return (b&&(b.u||0)>((a&&a.u)||0))?b:a}
 function mergeState(L,R){
   var o=blank();
-  o.cfg=mergeObj(L.cfg,R.cfg)||o.cfg;o.bud=mergeObj(L.bud,R.bud)||o.bud;o.sim=mergeObj(L.sim,R.sim)||null;
+  o.cfg=mergeObj(L.cfg,R.cfg)||o.cfg;o.bud=mergeBud(L.bud,R.bud);o.sim=mergeObj(L.sim,R.sim)||null;
   ["tx","rec","goals","cont","day","cards"].forEach(function(k){o[k]=mergeList(L[k],R[k])});o.ach=mergeAch(L.ach,R.ach);
   var b=blank().cfg;for(var k in b)if(o.cfg[k]===undefined)o.cfg[k]=b[k];
   o.updatedAt=Math.max(L.updatedAt||0,R.updatedAt||0);return o;
 }
 function setSync(st){sync.st=st;updDot()}
-function schedPush(){if(sync.st==="off")return;clearTimeout(sync.timer);sync.timer=setTimeout(push,2500)}
+function schedPush(){if(sync.st==="off")return;clearTimeout(sync.timer);sync.timer=setTimeout(pull,2500)}   /* sempre baixa e mescla antes de gravar: enviar direto apagaria da nuvem o que o outro aparelho gravou nesse meio-tempo */
 /* ---------- criptografia ponta a ponta da sincronização ----------
    Chave AES-256 derivada da senha de criptografia com PBKDF2-SHA256 (600 mil iterações; sal = SHA-256 do código do casal).
    O aparelho guarda só a chave derivada, nunca a senha. A planilha recebe "e1:" + base64(iv de 12 bytes + texto cifrado AES-GCM).
@@ -1469,7 +1636,7 @@ function push(){
 }
 function pull(){
   var sy=SY();if(!sy.api)return Promise.resolve();setSync("syncing");sync.last=Date.now();sync.block=false;sync.err="";var plain=false;
-  return post({a:"login",p:sy.id,pin:sy.pin,nome:sy.id}).then(function(r){if(!r.ok)throw new Error(r.erro||"erro");return post({a:"load",p:sy.id,pin:sy.pin})}).then(function(r){
+  return (sync.logged?Promise.resolve({ok:true}):post({a:"login",p:sy.id,pin:sy.pin,nome:sy.id})).then(function(r){if(!r.ok)throw new Error(r.erro||"erro");sync.logged=true;return post({a:"load",p:sy.id,pin:sy.pin})}).then(function(r){
     if(!r.ok)throw new Error(r.erro||"erro");var raw=r.data||"";plain=!!raw&&raw.indexOf("e1:")!==0;return unseal(raw)
   }).then(unpack).then(function(txt){
     if(!txt)return push();
@@ -1477,7 +1644,9 @@ function pull(){
     if(!remote||typeof remote!=="object"||!Array.isArray(remote.tx))throw new Error("E2E_FMT");
     if(plain&&sy.k&&sy.e){toast("A nuvem tinha dados sem criptografia (outro aparelho desatualizado ou sem a senha). Regravei criptografado.");return push()}   /* não mescla texto aberto depois que a criptografia já estava valendo */
     try{localStorage.setItem("joint.backup",JSON.stringify(S))}catch(e){}
-    S=mergeState(S,remote);ensureRec();persist();render();return push();
+    var before=JSON.stringify(S);S=mergeState(S,remote);ensureRec();
+    if(JSON.stringify(S)!==before){persist();render()}   /* só redesenha se chegou algo novo, para não tirar o foco de quem está digitando */
+    return push();
   }).catch(function(e){var m=String(e.message||e);if(SYERR[m]){sync.block=true;sync.err=SYERR[m]}setSync("err");toast(SYERR[m]||(m.indexOf("PIN")>=0?"PIN incorreto.":"Não consegui sincronizar agora."))});
 }
 document.addEventListener("visibilitychange",function(){if(started&&document.visibilityState==="visible"&&sync.st!=="off"&&Date.now()-sync.last>20000)pull()});

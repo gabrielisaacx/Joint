@@ -1,6 +1,6 @@
 const fs=require("fs"),vm=require("vm"),assert=require("assert");
-const ctx={};vm.createContext(ctx);vm.runInContext(fs.readFileSync(__dirname+"/../core.js","utf8"),ctx);
-const {simulate,solvePmt,solveMonths,fvClosed,mRate,irRate,shares,balance,parseMoney,dayAdd,dayDiff,logStreak,planStreak,milestones,streakScan,addMonths,invoiceOf,splitParcelas,parcelPV,parcelRate,diagnose}=ctx;
+const ctx={};vm.createContext(ctx);vm.runInContext(fs.readFileSync(__dirname+"/../src/core.js","utf8"),ctx);
+const {simulate,solvePmt,solveMonths,fvClosed,mRate,irRate,shares,balance,parseMoney,dayAdd,dayDiff,logStreak,planStreak,milestones,streakScan,addMonths,invoiceOf,splitParcelas,parcelPV,parcelRate,diagnose,suggestBudget,whatIf,quickPicks,normTxt}=ctx;
 let n=0;function ok(name,f){f();n++;console.log("ok -",name)}
 const near=(a,b,t,m)=>assert(Math.abs(a-b)<=t,(m||"")+" "+a+" vs "+b);
 
@@ -111,4 +111,27 @@ ok("diagnóstico: mês em aberto não pontua tendência (gasto parcial x média 
   assert.strictEqual(f.max,10);assert.strictEqual(pt.max,0);assert.strictEqual(pt.pts,0);assert(/mês fechado/.test(pt.txt))});
 ok("diagnóstico: reserva usa plural correto",()=>{
   const d=diagnose({inc:1000000,exp:500000,fixed:0,cat:{},reserveM:4.5,reserveAvg:500000});assert(/4,5 meses de gastos/.test(d.items.find(i=>i.id==="reserve").txt))});
+ok("orçamento sugerido: cabe na renda => limite = média arredondada para cima em R$ 10",()=>{
+  const r=suggestBudget({Moradia:200000,Mercado:81234},{Moradia:200000},500000,20);
+  assert.strictEqual(r.factor,1);assert.strictEqual(r.lim.Moradia,200000);assert.strictEqual(r.lim.Mercado,82000)});
+ok("orçamento sugerido: não cabe => corta só a parte variável, na mesma proporção, e fecha no teto",()=>{
+  const r=suggestBudget({Moradia:200000,Mercado:150000,Lazer:150000},{Moradia:200000},500000,20);
+  assert.strictEqual(r.allowed,400000);assert.strictEqual(r.lim.Moradia,200000);assert.strictEqual(r.lim.Mercado,100000);assert.strictEqual(r.lim.Lazer,100000);assert.strictEqual(r.total,400000);assert(r.feasible)});
+ok("orçamento sugerido: fixos acima do teto => inviável, variáveis zeradas",()=>{
+  const r=suggestBudget({Moradia:450000,Lazer:50000},{Moradia:450000},500000,20);assert.strictEqual(r.feasible,false);assert.strictEqual(r.lim.Lazer,0)});
+ok("e se: sem juros, meses = falta / aporte; extra encurta",()=>{
+  const r=whatIf([{name:"A",target:1200000,saved:0},{name:"B",target:600000,saved:600000}],100000,100000,0);
+  assert.strictEqual(r.rows[0].m0,12);assert.strictEqual(r.rows[0].m1,6);assert.strictEqual(r.rows[1].m0,0);assert.strictEqual(r.total.m0,12)});
+ok("e se: sem aporte e sem saldo => não chega (null); com juros chega antes",()=>{
+  assert.strictEqual(whatIf([{name:"A",target:100000,saved:0}],0,0,0).rows[0].m0,null);
+  assert.strictEqual(whatIf([{name:"A",target:12000000,saved:0}],100000,0,0).rows[0].m0,120);assert(whatIf([{name:"A",target:12000000,saved:0}],100000,0,0.12).rows[0].m0<100)});
+ok("sugestões de lançamento: ignora acento/maiúscula, prefixo primeiro, mais frequente primeiro, devolve o mais recente",()=>{
+  const L=[{n:"Uber",d:"2026-01-01",c:"Transporte",v:1},{n:"uber",d:"2026-02-01",c:"Transporte",v:2},{n:"Pão de Açúcar",d:"2026-02-02",c:"Mercado",v:3},{n:"Subway",d:"2026-02-03",c:"Restaurantes",v:4},{n:"",d:"2026-02-04"}];
+  assert.strictEqual(quickPicks(L,"",4).map(t=>t.v).join(),"2,4,3");
+  assert.strictEqual(quickPicks(L,"ub",4).map(t=>t.v).join(),"2,4");
+  assert.strictEqual(quickPicks(L,"acu",4).map(t=>t.v).join(),"3");assert.strictEqual(normTxt(" São João "),"sao joao")});
+ok("diagnóstico: classificação de categoria configurável (Pets como essencial)",()=>{
+  const b={inc:1000000,exp:600000,fixed:0,cat:{Pets:600000},saveTarget:20};
+  assert.strictEqual(diagnose(b).items.find(i=>i.id==="rule"),undefined);
+  assert.strictEqual(diagnose(Object.assign({kind:{Pets:"n"}},b)).items.find(i=>i.id==="rule").sev,"warn")});
 console.log("\n"+n+" testes passaram");
