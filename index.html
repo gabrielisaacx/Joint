@@ -232,6 +232,32 @@ input,select,textarea,.af input{font-size:16px}
 .tk.s{display:inline-block;width:3px;height:12px;border-radius:2px;background:var(--muted)}.tk.l.s{background:var(--fg)}
 .catrow small.note{font-size:.74rem}
 
+/* ===== layout compacto ===== */
+body{padding-block:max(12px,env(safe-area-inset-top,0px)) calc(104px + env(safe-area-inset-bottom,0px));padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px))}
+.view{gap:10px}
+.top{padding:2px 2px 0;align-items:center}
+h1{font-size:clamp(1.45rem,6vw,1.9rem)}
+.sub{margin:2px 0 0;font-size:.84rem}
+.card{padding:13px 14px;gap:9px;border-radius:18px}
+.hero{padding:14px;border-radius:20px;gap:8px}
+.hero-in{grid-template-columns:minmax(0,104px) minmax(0,1fr);gap:14px}
+.legend{gap:5px}.legend b{font-size:1.18rem}
+.note{font-size:.8rem;line-height:1.4}
+.monthnav b{font-size:1rem}
+.monthnav .ghost{min-height:40px;padding:6px 12px}
+.ghost{padding:8px 12px;border-radius:12px;font-size:.9rem;flex:none}
+.stat{padding:9px 12px;border-radius:14px}.stat b{font-size:1.3rem}
+.grid2{gap:8px}
+.catrow{gap:4px}
+.card>.catrow+.catrow{margin-top:2px}
+.seg.mini{padding:3px;border-radius:12px;gap:3px;flex:none}
+.seg.mini button{min-height:36px;padding:4px 14px;font-size:.8rem;border-radius:9px}
+b.big{font-family:var(--display);font-weight:600;font-size:1.5rem;line-height:1}
+.legendrow{gap:10px;font-size:.74rem}
+.row.sp>div{min-width:0}
+.week{margin-top:-2px}
+.empty{padding:10px 8px;margin:0;font-size:.86rem}
+
 </style>
 </head>
 <body>
@@ -723,8 +749,8 @@ function diagRun(ym,who){
 }
 function diagCard(){
   var d=diagRun(month,-1);
-  if(!d.ok)return '<div class="card"><div class="row sp"><h4>Diagnóstico financeiro</h4><button class="ghost" data-act="diag">Abrir</button></div><p class="note">Lance a renda do mês para ver a análise.</p></div>';
-  return '<div class="card"><div class="row sp"><h4>Diagnóstico financeiro</h4><button class="ghost" data-act="diag">Ver análise</button></div><div class="row sp"><span><b style="font-size:1.4rem">'+d.score+'</b><small>/100</small></span><span class="badge">'+d.level+'</span></div><p class="note">'+(d.rate<0?'Gastos acima da renda neste mês.':'Sobra de '+pc(d.rate)+' da renda'+(d.future?' (planejado)':d.partial?' até hoje':'')+'.')+'</p></div>';
+  if(!d.ok)return '<div class="card"><div class="row sp"><div><h4>Diagnóstico</h4><p class="note">Lance a renda do mês para ver a análise.</p></div><button class="ghost" data-act="diag">Abrir</button></div></div>';
+  return '<div class="card"><div class="row sp"><div><h4>Diagnóstico</h4><div class="row" style="gap:8px;margin-top:2px"><span><b class="big">'+d.score+'</b><small class="note">/100</small></span><span class="badge">'+d.level+'</span><small class="note">'+(d.rate<0?'gasto acima da renda':'sobra '+pc(d.rate)+(d.future?' (planejado)':d.partial?' até hoje':''))+'</small></div></div><button class="ghost" data-act="diag">Ver análise</button></div></div>';
 }
 function openDiag(){
   sheetKind="diag";var ym=month,d=diagRun(ym,diagWho);
@@ -817,18 +843,22 @@ function trendCard(){
     if(x.inc||x.exp)g+='<text class="axt" x="'+cx+'" y="'+(T+ph+31)+'" text-anchor="middle" style="fill:var(--fg)">'+(sv>=0?"+":"")+kfmt(sv)+'</text>';
     g+='<rect data-act="trend" data-id="'+x.m+'" x="'+(cx-gw/2)+'" y="0" width="'+gw+'" height="'+H+'" fill="transparent" style="cursor:pointer"/>';
   });
-  var h='<div class="card"><div class="row sp"><h4>Evolução</h4><span class="legendrow"><span><i class="sq i"></i>Receita</span><span><i class="sq e"></i>Despesa</span></span></div>';
+  var h='<div class="legendrow"><span><i class="sq i"></i>Receita</span><span><i class="sq e"></i>Despesa</span><span>número = sobra · claro = planejado</span></div>';
   h+='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Receita e despesa por mês, com a sobra abaixo de cada mês">'+g+'</svg>';
-  h+='<p class="note">Número abaixo do mês: sobra (receita − despesa), em R$. Meses futuros aparecem mais claros e mostram só o planejado (fixos e parcelas).</p>';
   if(pick)h+='<div class="row sp"><p class="note" style="color:var(--fg)"><b>'+ymTitle(pick.m)+(pick.fut?' (planejado)':'')+'</b><br>Receita '+brl0(pick.inc)+' · Despesa '+brl0(pick.exp)+' · Sobra <b class="'+(pick.inc-pick.exp<0?'neg':'pos')+'">'+brl0(pick.inc-pick.exp)+'</b></p><button class="ghost" data-act="gotom" data-id="'+pick.m+'">Abrir</button></div>';
-  return h+'</div>';
+  return h;
 }
 function cumDays(ym,upto){
   var n=dim(ym),a=[],i;for(i=0;i<=n;i++)a.push(0);
   monthTx(ym).forEach(function(t){if(t.k!=="o")return;var d=t.d.slice(0,7)===ym?+t.d.slice(8,10):1;a[Math.min(n,d)]+=t.v});
   for(i=1;i<=n;i++)a[i]+=a[i-1];return a.slice(0,(upto||n)+1);
 }
-var paceData=null;
+var paceData=null,chartTab="evo";
+function chartsCard(){   /* um cartão só, com alternância, para a Home não ficar comprida */
+  var a=trendCard(),b=paceCard();if(!a&&!b)return "";
+  var t=chartTab==="pace"&&b?"pace":(a?"evo":"pace");
+  return '<div class="card"><div class="row sp"><h4>'+(t==="evo"?"Evolução":"Ritmo do mês")+'</h4>'+(a&&b?'<div class="seg mini"><button data-act="ctab" data-id="evo"'+(t==="evo"?' class="on"':'')+'>Meses</button><button data-act="ctab" data-id="pace"'+(t==="pace"?' class="on"':'')+'>Dias</button></div>':'')+'</div>'+(t==="evo"?a:b)+'</div>';
+}
 function paceCard(){
   var ym=month,cur=today().slice(0,7);if(ym>cur)return "";
   var a=cumDays(ym,ym===cur?new Date().getDate():0),pm=ymAdd(ym,-1),b=cumDays(pm,0),hasB=b[b.length-1]>0;
@@ -845,8 +875,8 @@ function paceCard(){
   paceData={a:a,b:hasB?b:null,L:L,pw:pw,W:W,n:n,ym:ym,pm:pm};
   var dA=a.length-1,cmp='';
   if(hasB){var ref=b[Math.min(dA,b.length-1)],df=a[dA]-ref;cmp=Math.abs(df)<100?'No mesmo ritmo de '+ymLabel(pm).split(" ")[0]+'.':'Até o dia '+dA+': <b>'+brl0(Math.abs(df))+(df>0?' a mais':' a menos')+'</b> que em '+ymLabel(pm).split(" ")[0]+' no mesmo dia.'}
-  else cmp='Sem mês anterior para comparar ainda. A linha tracejada aparece a partir do segundo mês de uso.';
-  return '<div class="card"><div class="row sp"><h4>Ritmo do mês</h4><span class="legendrow"><span><i class="sw"></i>Este mês</span>'+(hasB?'<span><i class="sw dm"></i>Mês anterior</span>':'')+'</span></div><div id="pbox" style="position:relative"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Gasto acumulado por dia, contra o mês anterior">'+g+'</svg><div class="tip" id="ptip" hidden></div></div><p class="note" id="pnote">'+cmp+' Gasto acumulado dia a dia; toque no gráfico para ver o valor de um dia.</p></div>';
+  else cmp='Gasto acumulado dia a dia. A comparação com o mês anterior aparece a partir do segundo mês.';
+  return '<div class="legendrow"><span><i class="sw"></i>Este mês</span>'+(hasB?'<span><i class="sw dm"></i>Mês anterior</span>':'')+'<span>toque para ver um dia</span></div><div id="pbox" style="position:relative"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Gasto acumulado por dia, contra o mês anterior">'+g+'</svg><div class="tip" id="ptip" hidden></div></div><p class="note" id="pnote">'+cmp+'</p>';
 }
 function bindPace(){
   var box=$("#pbox"),P=paceData;if(!box||!P)return;var svg=$("svg",box),tip=$("#ptip",box),rc=$("#pxr",box);
@@ -907,23 +937,21 @@ function vHome(){
     +'<p class="note">Receitas <b>'+brl0(sm.inc)+'</b> · Despesas <b>'+brl0(sm.exp)+'</b> · Saldo <b class="'+(sm.inc-sm.exp<0?'neg':'pos')+'">'+brl0(sm.inc-sm.exp)+'</b></p>';
   if(ym===cur&&sm.exp>0){
     var dn=new Date().getDate(),dd=dim(ym),varExp=sm.exp-sm.fixed-sm.carry,proj=Math.round(sm.fixed+sm.carry+varExp/Math.max(1,dn)*dd);
-    h+='<p class="note">Projeção de fechamento: <b>'+brl0(proj)+'</b> <span title="fixos + média diária dos gastos variáveis × dias do mês">(fixos + ritmo diário dos variáveis)</span>'+(bt>0&&proj>bt?' · <span class="neg">acima do orçamento em '+brl0(proj-bt)+'</span>':'')+'.</p>';
+    h+='<p class="note">Projeção de fechamento: <b>'+brl0(proj)+'</b>'+(bt>0&&proj>bt?' · <span class="neg">acima do orçamento em '+brl0(proj-bt)+'</span>':'')+'.</p>';
   }
   h+='</div>';
   h+=repNudge();
-  h+=trendCard();
-  h+=paceCard();
+  h+=chartsCard();
   h+=diagCard();
-  h+=gameCard();
-  h+=commitCard();
   var bi=balanceInfo();
-  h+='<div class="card"><h4>Entre vocês</h4><p style="margin:0">'+bi.txt+'</p>'+(bi.debtor>=0?'<button class="ghost" data-act="settle">Registrar acerto</button>':'')+'<p class="note">Saldo acumulado das despesas divididas com data até hoje, descontando os acertos já registrados. Parcelas e fixos futuros entram quando a data chegar.</p></div>';
+  h+='<div class="card"><div class="row sp"><div><h4>Entre vocês</h4><p style="margin:2px 0 0">'+bi.txt+'</p></div>'+(bi.debtor>=0?'<button class="ghost" data-act="settle">Acertar</button>':'')+'</div></div>';
   if(!S.tx.length)h+='<div class="card"><h3>Comece por aqui</h3><p class="note">Toque no <b>+</b> para lançar o primeiro gasto ou receita. Em Ajustes você confere os nomes, a divisão e as premissas de juros.</p></div>';
   h+='<div class="card"><div class="row sp"><h4>Onde o dinheiro foi</h4><button class="ghost" data-act="tab" data-id="gastos">Ver tudo</button></div>'+catBars(sm,true,5,catAvg(ym,-1))+'</div>';
+  h+=commitCard();
   h+='<div class="card"><div class="row sp"><h4>Metas</h4><button class="ghost" data-act="tab" data-id="metas">Abrir</button></div>';
   if(!gs.length)h+='<p class="empty">Nenhuma meta ainda. Crie uma para a viagem, a reserva ou o que vier.</p>';
   gs.slice(0,3).forEach(function(g){var n=goalNeed(g);h+='<button class="catrow" data-act="goal" data-id="'+g.id+'"><div class="row sp"><span style="font-weight:700">'+esc(g.name)+'</span><span><b>'+pc(n.p)+'</b></span></div><div class="bar"><i class="g" style="width:'+(n.p*100).toFixed(1)+'%"></i></div></button>'});
-  return h+'</div></div>';
+  h+='</div>'+gameCard();return h+'</div>';
 }
 
 /* ---------- GASTOS ---------- */
@@ -1278,6 +1306,7 @@ var A={
   diag:function(){openDiag()},
   e2eoff:function(){syPatch({k:undefined,e:undefined});e2eK=null;sync.block=false;openCfg();push().then(function(){toast("Criptografia removida. A nuvem voltou a guardar os dados abertos.")})},
   trend:function(e){trendSel=e.dataset.id;render()},
+  ctab:function(e){chartTab=e.dataset.id;render()},
   repopen:function(){openRep()},
   repall:function(e){$$("#sheetBody [data-rep]").forEach(function(i){i.checked=e.dataset.id==="1"})},
   repgo:function(){repGo()},
