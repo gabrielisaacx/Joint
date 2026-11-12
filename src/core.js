@@ -305,7 +305,7 @@ function quickPicks(list, q, n) {
 
 
 /* ---------- leitor de fatura (linhas de texto extraídas do PDF) ----------
-   Formato Nubank: "15 SET •••• 3783 Nome da loja - Parcela 2/5 R$ 54,59"; estorno e pagamento vêm com "−R$".
+   Formato Nubank: "05 DEZ •••• 1111 Nome da loja - Parcela 2/5 R$ 100,00"; estorno e pagamento vêm com "−R$".
    Vencimento em "FATURA 22 OUT 2026"; fechamento em "Período vigente: 15 SET a 15 OUT".
    Ano de cada lançamento: o do vencimento, ou o anterior se o mês do lançamento for maior que o do vencimento (dez em fatura de jan).
    Reserva genérica para outros bancos: linhas "dd/mm descrição 1.234,56". */
