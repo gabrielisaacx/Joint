@@ -68,3 +68,14 @@ Fixos (marcados com "Repetir todo mês") aparecem no mês atual e nos 11 seguint
 - **Ritmo do mês (Home):** gasto acumulado dia a dia contra o mês anterior. Toque para ver o valor de um dia.
 - **Categorias:** cada barra traz um marcador da média dos até 3 meses anteriores e outro do limite, com a diferença em R$.
 - **Diagnóstico:** barra por critério e nota mês a mês.
+
+## Criptografia da sincronização (ponta a ponta)
+Em Ajustes > Sincronização, defina uma **senha de criptografia** (8+ caracteres), a mesma nos dois celulares. Com ela, os dados saem do aparelho já cifrados e a planilha guarda só texto ilegível.
+- Chave AES-256 derivada da senha com PBKDF2-SHA256 (600 mil iterações; sal = SHA-256 do código do casal). O aparelho guarda só a chave derivada, nunca a senha.
+- Pacote: `e1:` + base64(IV de 12 bytes + AES-GCM). O código do casal entra como dado autenticado.
+- Senha errada, senha ausente ou pacote adulterado: o app avisa, pausa a sincronização e **não sobrescreve** a nuvem.
+- Não precisa reimplantar o `Codigo.gs`: o backend só guarda o texto.
+- Limites: o PIN do espaço continua sendo o que autoriza gravar, então quem tiver link, código e PIN ainda pode apagar ou trocar o conteúdo da nuvem (os aparelhos mantêm a cópia local e recusam o que não abrir com a chave). Os dados no próprio aparelho seguem sem criptografia, protegidos pelo bloqueio do celular e pelo PIN do app. Sem recuperação de senha: se esquecer, defina uma nova nos dois aparelhos.
+
+## Auditoria das contas (nov/2026)
+Corrigido: (1) editar um fixo agora carimba os lançamentos futuros, para o outro aparelho receber o valor novo; (2) "Entre vocês" conta só despesas com data até hoje, sem parcelas e fixos a vencer; (3) a projeção de fechamento não multiplica pelo ritmo diário a fatura de compras do mês anterior; (4) no diagnóstico, a tendência só pontua com o mês fechado; (5) nuvem ilegível nunca é sobrescrita.

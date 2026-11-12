@@ -482,14 +482,15 @@ function diagnose(o){
   if(o.reserveM!=null&&o.reserveAvg>0){
     var m=o.reserveM,s4=m>=6?"ok":m>=3?"warn":"bad";
     add("reserve",s4,Math.round(20*(m>=6?1:m>=3?(.5+.5*(m-3)/3):.5*cl(m/3,0,1))),20,"Reserva de emergência",
-      "As metas (sem viagens) cobrem "+(Math.round(m*10)/10).toLocaleString("pt-BR")+" mês de gastos (média "+R(o.reserveAvg)+"/mês). O recomendado é de 3 a 6 meses, para aguentar perda de renda ou imprevisto.");
+      "As metas (sem viagens) cobrem "+(Math.round(m*10)/10).toLocaleString("pt-BR")+(m>=2||m<1?" meses":" mês")+" de gastos (média "+R(o.reserveAvg)+"/mês). O recomendado é de 3 a 6 meses, para aguentar perda de renda ou imprevisto.");
     if(m<3){var need=3*o.reserveAvg-m*o.reserveAvg;act.push("Monte a reserva até 3 meses de gastos: faltam "+R(need)+". Em 12 meses, são "+R(need/12)+" por mês.")}
   }
   /* 5. tendência */
   var pv=(o.prev||[]).filter(function(p){return p.exp>0});
   if(pv.length){
     var avg=pv.reduce(function(a,p){return a+p.exp},0)/pv.length,r=exp/avg,s5=r<=1.05?"ok":r<=1.15?"warn":"bad";
-    add("trend",s5,Math.round(10*cl((1.3-r)/0.25,0,1)),10,"Tendência de gastos",
+    /* mês em aberto: gasto parcial contra média de meses inteiros sempre parece bom, então não pontua */
+    add("trend",o.partial?"ok":s5,o.partial?0:Math.round(10*cl((1.3-r)/0.25,0,1)),o.partial?0:10,"Tendência de gastos",(o.partial?"Só pontua com o mês fechado. Até agora: ":"")+
       "Gasto de "+R(exp)+" contra média de "+R(avg)+" dos "+pv.length+" mês(es) anteriores ("+(r>=1?"+":"−")+P(Math.abs(r-1))+").");
     var up=[];for(var k in o.cat){var pa=pv.reduce(function(a,p){return a+((p.cat||{})[k]||0)},0)/pv.length,d=o.cat[k]-pa;if(d>=15000&&(pa===0||o.cat[k]/pa>=1.3))up.push([k,d])}
     up.sort(function(a,b){return b[1]-a[1]});
@@ -575,10 +576,11 @@ function ensureRec(){
 function recPropagate(r,stop){   /* mexe só nos meses seguintes ao atual e só nos lançamentos que ninguém editou à mão (u===1) */
   var cur=today().slice(0,7),cc=r.cd?find(S.cards,r.cd):null;
   S.tx.forEach(function(t){
-    if(t.r!==r.id||t.x||t.u!==1||t.d.slice(0,7)<=cur)return;
+    if(t.r!==r.id||t.x||!(t.u===1||t.a)||t.d.slice(0,7)<=cur)return;   /* a=1: automático, ainda não editado à mão */
     if(stop){t.x=1;t.u=Date.now();return}
     var ym=t.d.slice(0,7);t.v=r.v;t.n=r.n;t.c=r.c;t.s=r.s||0;t.w=r.w;t.d=ym+"-"+pad(Math.min(r.day||1,dim(ym)));
     if(cc&&!cc.x)t.m=invoiceOf(t.d,cc.close,cc.due).m;
+    t.a=1;t.u=Date.now();   /* carimbo novo: sem isso o outro aparelho ficava com o valor antigo (empate em u=1 na mescla) */
   });
 }
 
@@ -587,10 +589,10 @@ function tm(t){return t.m||t.d.slice(0,7)}   /* mês em que o lançamento pesa: 
 function monthTx(ym){return S.tx.filter(function(t){return !t.x&&tm(t)===ym})}
 function cardName(id){var c=find(S.cards,id);return c?c.name:"Cartão"}
 function summary(ym,who){
-  var r={inc:0,exp:0,cat:{},fixed:0};
+  var r={inc:0,exp:0,cat:{},fixed:0,carry:0};   /* carry: compras no cartão feitas em outro mês que caem na fatura deste */
   monthTx(ym).forEach(function(t){
     if(t.k==="i"){if(who<0||t.w===who)r.inc+=t.v}
-    else if(t.k==="o"){var v=who<0?t.v:shares(t,S.cfg.split)[who];r.exp+=v;r.cat[t.c]=(r.cat[t.c]||0)+v;if(t.r||t.ip)r.fixed+=v}   /* fixos e parcelas são compromissos conhecidos: não entram na projeção pelo ritmo diário */
+    else if(t.k==="o"){var v=who<0?t.v:shares(t,S.cfg.split)[who];r.exp+=v;r.cat[t.c]=(r.cat[t.c]||0)+v;if(t.r||t.ip)r.fixed+=v;else if(t.d.slice(0,7)!==ym)r.carry+=v}   /* fixos e parcelas são compromissos conhecidos: não entram na projeção pelo ritmo diário */
   });
   return r;
 }
@@ -735,7 +737,7 @@ function openDiag(){
   d.items.forEach(function(i){h+='<div class="card"><div class="row sp"><h4>'+esc(i.title)+'</h4><span class="badge">'+icon[i.sev]+(i.max?' · '+i.pts+'/'+i.max:'')+'</span></div>'+(i.max?'<div class="bar"><i style="width:'+(i.pts/i.max*100).toFixed(1)+'%"></i></div>':'')+'<p class="note">'+esc(i.txt)+'</p></div>'});
   if(d.top.length)h+='<div class="card"><h4>Onde mais pesou</h4><p class="note">'+d.top.map(function(x){return esc(x[0])+' <b>'+brl0(x[1])+'</b>'}).join(' · ')+'</p></div>';
   h+='<div class="card"><h4>Como melhorar</h4>'+(d.actions.length?'<ul class="note" style="margin:6px 0 0;padding-left:18px">'+d.actions.map(function(a){return '<li>'+esc(a)+'</li>'}).join('')+'</ul>':'<p class="note">Nada crítico agora. Mantenha o ritmo e use o excedente para as metas.</p>')+'</div>';
-  h+='<p class="note"><b>Como a nota é feita</b>: soma de critérios com peso. Poupança 30, fixos e parcelas 20, essenciais x desejos (50/30/20) 20, reserva de emergência 20 (só no casal), tendência de gastos 10. Critérios sem dados saem da conta. Gastar mais que a renda limita a nota a 49. A classificação em essencial ou desejo usa as categorias padrão; categorias criadas por vocês ficam fora dessa conta. É um guia por regras gerais, não uma recomendação financeira personalizada.</p><button class="btn sec full" data-act="close">Fechar</button>';
+  h+='<p class="note"><b>Como a nota é feita</b>: soma de critérios com peso. Poupança 30, fixos e parcelas 20, essenciais x desejos (50/30/20) 20, reserva de emergência 20 (só no casal), tendência de gastos 10 (só com o mês fechado). Critérios sem dados saem da conta. Gastar mais que a renda limita a nota a 49. A classificação em essencial ou desejo usa as categorias padrão; categorias criadas por vocês ficam fora dessa conta. É um guia por regras gerais, não uma recomendação financeira personalizada.</p><button class="btn sec full" data-act="close">Fechar</button>';
   openSheet(h);
 }
 function gameCard(){
@@ -885,7 +887,7 @@ function catBars(sum,limits,max,avg){
   }).join('');
 }
 function balanceInfo(){
-  var td=today(),b=balance(live(S.tx).filter(function(t){return !(t.r&&t.d>td)}),S.cfg.split);   /* fixo automático de data futura ainda não foi pago */
+  var td=today(),b=balance(live(S.tx).filter(function(t){return !(t.k==="o"&&t.d>td)}),S.cfg.split);   /* despesa com data futura (fixo ou parcela a vencer) ainda não foi paga por ninguém */
   if(Math.abs(b)<1)return {b:0,txt:'Vocês estão quites.',debtor:-1};
   return b>0?{b:b,txt:NM(1)+' deve <b>'+brl(b)+'</b> a '+NM(0)+'.',debtor:1}:{b:b,txt:NM(0)+' deve <b>'+brl(-b)+'</b> a '+NM(1)+'.',debtor:0};
 }
@@ -904,7 +906,7 @@ function vHome(){
     +'<li><span class="lab"><i class="dot" style="background:var(--pa)"></i>Metas</span><span><b>'+(gn?pc(gp):'–')+'</b><small>'+(gn?gn+(gn>1?' metas':' meta'):'sem metas')+'</small></span></li></ul></div>'
     +'<p class="note">Receitas <b>'+brl0(sm.inc)+'</b> · Despesas <b>'+brl0(sm.exp)+'</b> · Saldo <b class="'+(sm.inc-sm.exp<0?'neg':'pos')+'">'+brl0(sm.inc-sm.exp)+'</b></p>';
   if(ym===cur&&sm.exp>0){
-    var dn=new Date().getDate(),dd=dim(ym),varExp=sm.exp-sm.fixed,proj=Math.round(sm.fixed+varExp/Math.max(1,dn)*dd);
+    var dn=new Date().getDate(),dd=dim(ym),varExp=sm.exp-sm.fixed-sm.carry,proj=Math.round(sm.fixed+sm.carry+varExp/Math.max(1,dn)*dd);
     h+='<p class="note">Projeção de fechamento: <b>'+brl0(proj)+'</b> <span title="fixos + média diária dos gastos variáveis × dias do mês">(fixos + ritmo diário dos variáveis)</span>'+(bt>0&&proj>bt?' · <span class="neg">acima do orçamento em '+brl0(proj-bt)+'</span>':'')+'.</p>';
   }
   h+='</div>';
@@ -915,7 +917,7 @@ function vHome(){
   h+=gameCard();
   h+=commitCard();
   var bi=balanceInfo();
-  h+='<div class="card"><h4>Entre vocês</h4><p style="margin:0">'+bi.txt+'</p>'+(bi.debtor>=0?'<button class="ghost" data-act="settle">Registrar acerto</button>':'')+'<p class="note">Saldo acumulado de todas as despesas divididas, descontando os acertos já registrados.</p></div>';
+  h+='<div class="card"><h4>Entre vocês</h4><p style="margin:0">'+bi.txt+'</p>'+(bi.debtor>=0?'<button class="ghost" data-act="settle">Registrar acerto</button>':'')+'<p class="note">Saldo acumulado das despesas divididas com data até hoje, descontando os acertos já registrados. Parcelas e fixos futuros entram quando a data chegar.</p></div>';
   if(!S.tx.length)h+='<div class="card"><h3>Comece por aqui</h3><p class="note">Toque no <b>+</b> para lançar o primeiro gasto ou receita. Em Ajustes você confere os nomes, a divisão e as premissas de juros.</p></div>';
   h+='<div class="card"><div class="row sp"><h4>Onde o dinheiro foi</h4><button class="ghost" data-act="tab" data-id="gastos">Ver tudo</button></div>'+catBars(sm,true,5,catAvg(ym,-1))+'</div>';
   h+='<div class="card"><div class="row sp"><h4>Metas</h4><button class="ghost" data-act="tab" data-id="metas">Abrir</button></div>';
@@ -1226,6 +1228,8 @@ function openCfg(){
     +'<h4>Acesso</h4><p class="note">Usuário: <b>'+esc(AU().n||"")+'</b>. Bloquear o app depois de ficar fora dele por:</p><div class="seg">'+[[0,"Ao sair"],[1,"1 min"],[5,"5 min"],[15,"15 min"]].map(function(o){var m=AU().m==null?5:AU().m;return '<button type="button" data-act="lockmin" data-id="'+o[0]+'"'+(m===o[0]?' class="on"':'')+'>'+o[1]+'</button>'}).join('')+'</div><div class="grid2"><button class="btn sec" data-act="lock">Bloquear agora</button><button class="btn sec" data-act="pinchg">Alterar PIN</button></div>'
     +'<h4>Cartões de crédito</h4>'+(live(S.cards).map(function(c){return '<button class="tx" data-act="cardedit" data-id="'+c.id+'"><span class="ico">CC</span><span class="grow"><div class="t1">'+esc(c.name)+'</div><div class="t2"><span>fecha dia '+c.close+' · vence dia '+c.due+'</span><span class="badge '+(c.w===0?'a':'b')+'">'+esc(NM(c.w))+'</span></div></span></button>'}).join('')||'<p class="note">Nenhum cartão. Cadastre para lançar compras na fatura certa.</p>')+'<button type="button" class="ghost" data-act="cardnew">+ Novo cartão</button>'
     +'<h4>Sincronização entre aparelhos ('+st+')</h4><label class="f">Link do Google Apps Script<input type="text" data-f="api" value="'+esc(sy.api||"")+'" placeholder="https://script.google.com/macros/s/.../exec"></label><div class="grid2"><label class="f">Código do casal<input type="text" data-f="sid" value="'+esc(sy.id||"")+'" placeholder="ex.: gabrielxdayse"></label><label class="f">PIN (4+)<input type="password" data-f="pin" value="'+esc(sy.pin||"")+'"></label></div>'
+    +(sync.block&&sync.err?'<p class="note" style="color:var(--fg)"><b>Sincronização pausada.</b> '+esc(sync.err)+'</p>':'')+'<label class="f">Senha de criptografia (8+ caracteres)<input type="password" data-f="epw" autocomplete="new-password" placeholder="'+(sy.k?'ativa · em branco mantém a atual':'recomendada')+'"></label>'
+    +'<p class="note">'+(sy.k?'<b>Criptografia ativa.</b> ':'')+'Com essa senha os dados saem do aparelho já embaralhados (AES-256) e a planilha guarda só texto ilegível. Use a mesma senha nos dois celulares. Ela não é o PIN e não tem recuperação: se esquecer, os dados continuam nos aparelhos e basta definir uma senha nova nos dois.'+(sy.k?' <button type="button" class="ghost" data-act="e2eoff">Remover criptografia</button>':'')+'</p>'
     +'<p class="note">Sem o link, tudo fica só neste aparelho. Passo a passo no README do repositório.</p>'
     +'<button class="btn full" data-act="cfgsave">Salvar ajustes</button><div class="grid2"><button class="btn sec" data-act="export">Exportar backup</button><button class="btn sec" data-act="import">Importar backup</button></div><button class="btn danger full" data-act="wipe">Apagar dados deste aparelho</button><button class="btn sec full" data-act="close">Fechar</button>');
 }
@@ -1272,6 +1276,7 @@ var A={
   contnew:function(){openCont()},
   ach:function(){openAch()},
   diag:function(){openDiag()},
+  e2eoff:function(){syPatch({k:undefined,e:undefined});e2eK=null;sync.block=false;openCfg();push().then(function(){toast("Criptografia removida. A nuvem voltou a guardar os dados abertos.")})},
   trend:function(e){trendSel=e.dataset.id;render()},
   repopen:function(){openRep()},
   repall:function(e){$$("#sheetBody [data-rep]").forEach(function(i){i.checked=e.dataset.id==="1"})},
@@ -1302,10 +1307,17 @@ var A={
     c.names=[(f.n0||"").trim()||c.names[0],(f.n1||"").trim()||c.names[1]];c.split=Math.max(0,Math.min(100,n(f.split,50)));c.saveTarget=Math.max(0,n(f.save,20));c.cdi=Math.max(0,n(f.cdi,13.65));c.infl=Math.max(0,n(f.infl,4.5));c.spread=Math.max(0,n(f.spread,2));c.goalPct=Math.max(0,n(f.gpct,100));
     var nc=(f.newcat||"").trim();if(nc&&c.cats.indexOf(nc)<0)c.cats.push(nc);c.u=Date.now();
     try{localStorage.setItem(MEKEY,String(+f.me===1?1:0))}catch(e){}
-    var api=(f.api||"").trim(),sid=slug(f.sid),pin=(f.pin||"").trim(),old=SY();
-    var conn=api&&sid&&pin.length>=4;try{localStorage.setItem(SYKEY,JSON.stringify(conn?{api:api,id:sid,pin:pin}:{}))}catch(e){}
-    save();closeSheet();render();
-    if(conn){sync.st="idle";pull().then(function(){if(sync.st==="ok")toast("Sincronizado.")})}else{sync.st="off";updDot();toast("Ajustes salvos.")}
+    var api=(f.api||"").trim(),sid=slug(f.sid),pin=(f.pin||"").trim(),old=SY(),epw=f.epw||"";
+    var conn=api&&sid&&pin.length>=4,ns=conn?{api:api,id:sid,pin:pin}:{};
+    if(conn&&epw){if(epw.length<8){toast("A senha de criptografia precisa de 8 caracteres ou mais.");return}if(!e2eOk()){toast("Este navegador não permite criptografia aqui (precisa de HTTPS).");return}}
+    if(conn&&!epw&&old.k&&old.id===sid){ns.k=old.k;if(old.e)ns.e=1}   /* mantém a chave atual */
+    function fin(direct){
+      try{localStorage.setItem(SYKEY,JSON.stringify(ns))}catch(e){}sync.block=false;
+      save();closeSheet();render();
+      if(conn){sync.st="idle";(direct?push():pull()).then(function(){if(sync.st==="ok")toast(ns.k?"Sincronizado e criptografado.":"Sincronizado.")})}else{sync.st="off";updDot();toast("Ajustes salvos.")}
+    }
+    if(conn&&epw){toast("Gerando a chave…");e2eDerive(epw,sid).then(function(k){var chg=!!(old.k&&old.id===sid&&old.k!==k);ns.k=k;if(old.k===k&&old.e)ns.e=1;fin(chg)}).catch(function(){toast("Não consegui gerar a chave de criptografia.")})}   /* trocar a senha: regrava direto com a chave nova, porque a nuvem ainda está na antiga */
+    else fin(false);
   },
   welcomesave:function(){var f=fields();S.cfg.names=[(f.n0||"").trim()||"Pessoa 1",(f.n1||"").trim()||"Pessoa 2"];S.cfg.u=Date.now();try{localStorage.setItem(MEKEY,String(+f.me===1?1:0))}catch(e){}save();closeSheet();render()},
   lock:function(){lockNow()},
@@ -1357,7 +1369,7 @@ document.addEventListener("change",function(ev){
 
 /* ---------- sincronização (Google Sheets via Apps Script, igual ao app Treino) ---------- */
 function SY(){try{return JSON.parse(localStorage.getItem(SYKEY))||{}}catch(e){return {}}}
-var sync={st:(SY().api&&SY().id)?"idle":"off",dirty:false,timer:null,seq:0,last:0};
+var sync={st:(SY().api&&SY().id)?"idle":"off",dirty:false,timer:null,seq:0,last:0,block:false};
 function post(o){return fetch(SY().api,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(o)}).then(function(r){return r.json()})}
 function b64(u){var r="",i;for(i=0;i<u.length;i+=8192)r+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return btoa(r)}
 function pack(str){
@@ -1385,21 +1397,59 @@ function mergeState(L,R){
 }
 function setSync(st){sync.st=st;updDot()}
 function schedPush(){if(sync.st==="off")return;clearTimeout(sync.timer);sync.timer=setTimeout(push,2500)}
+/* ---------- criptografia ponta a ponta da sincronização ----------
+   Chave AES-256 derivada da senha de criptografia com PBKDF2-SHA256 (600 mil iterações; sal = SHA-256 do código do casal).
+   O aparelho guarda só a chave derivada, nunca a senha. A planilha recebe "e1:" + base64(iv de 12 bytes + texto cifrado AES-GCM).
+   O código do casal entra como dado autenticado, então um pacote de outro espaço não abre. */
+var E2E_IT=600000,e2eK=null,e2eKh="";
+function b64d(s){var bin=atob(s),u=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u}
+function hexd(h){var u=new Uint8Array(h.length/2);for(var i=0;i<u.length;i++)u[i]=parseInt(h.substr(i*2,2),16);return u}
+function e2eOk(){return !!(window.crypto&&window.crypto.subtle&&typeof TextEncoder!=="undefined")}
+function e2eDerive(pw,id){
+  var te=new TextEncoder(),cs=window.crypto.subtle;
+  return cs.digest("SHA-256",te.encode("joint-e2e-v1:"+id)).then(function(salt){
+    return cs.importKey("raw",te.encode(pw),"PBKDF2",false,["deriveBits"]).then(function(k){return cs.deriveBits({name:"PBKDF2",hash:"SHA-256",salt:salt,iterations:E2E_IT},k,256)});
+  }).then(function(bits){return hex(new Uint8Array(bits))});
+}
+function e2eKey(){
+  var h=SY().k;if(!h)return Promise.resolve(null);if(e2eK&&e2eKh===h)return Promise.resolve(e2eK);
+  return window.crypto.subtle.importKey("raw",hexd(h),"AES-GCM",false,["encrypt","decrypt"]).then(function(k){e2eK=k;e2eKh=h;return k});
+}
+function e2eAad(){return new TextEncoder().encode("joint:"+SY().id)}
+function seal(str){
+  return e2eKey().then(function(k){
+    if(!k)return str;var iv=window.crypto.getRandomValues(new Uint8Array(12));
+    return window.crypto.subtle.encrypt({name:"AES-GCM",iv:iv,additionalData:e2eAad()},k,new TextEncoder().encode(str)).then(function(ct){var c=new Uint8Array(ct),o=new Uint8Array(12+c.length);o.set(iv);o.set(c,12);return "e1:"+b64(o)});
+  });
+}
+function unseal(txt){
+  if(!txt||txt.indexOf("e1:")!==0)return Promise.resolve(txt);
+  return e2eKey().then(function(k){
+    if(!k)throw new Error("E2E_NOKEY");var u;try{u=b64d(txt.slice(3))}catch(e){throw new Error("E2E_FMT")}
+    return window.crypto.subtle.decrypt({name:"AES-GCM",iv:u.subarray(0,12),additionalData:e2eAad()},k,u.subarray(12)).then(function(pt){return new TextDecoder().decode(pt)},function(){throw new Error("E2E_BAD")});
+  });
+}
+function syPatch(o){var sy=SY();for(var k in o){if(o[k]===undefined)delete sy[k];else sy[k]=o[k]}try{localStorage.setItem(SYKEY,JSON.stringify(sy))}catch(e){}}
+var SYERR={E2E_NOKEY:"Os dados na nuvem estão criptografados. Informe a senha de criptografia em Ajustes. Nada foi sobrescrito.",E2E_BAD:"Senha de criptografia diferente da usada no outro aparelho. Nada foi sobrescrito.",E2E_FMT:"Dados da nuvem ilegíveis. Nada foi sobrescrito; os dados deste aparelho continuam salvos."};
 function push(){
-  var sy=SY();if(!sy.api)return Promise.resolve();if(saveT)persist();
+  var sy=SY();if(!sy.api)return Promise.resolve();
+  if(sync.block){setSync("err");toast(sync.err||"Sincronização pausada.");return Promise.resolve()}   /* nuvem não pôde ser lida: enviar agora apagaria o que o outro aparelho gravou */
+  if(saveT)persist();
   var seq0=sync.seq;setSync("syncing");
-  return pack(JSON.stringify(S)).then(function(data){return post({a:"save",p:sy.id,pin:sy.pin,data:data})}).then(function(r){if(!r.ok)throw new Error(r.erro||"erro");if(sync.seq===seq0)sync.dirty=false;setSync("ok")}).catch(function(e){setSync("err");toast(String(e.message||e).indexOf("PIN")>=0?"PIN incorreto.":"Sem conexão. As alterações ficam salvas no aparelho.")});
+  return pack(JSON.stringify(S)).then(seal).then(function(data){return post({a:"save",p:sy.id,pin:sy.pin,data:data})}).then(function(r){if(!r.ok)throw new Error(r.erro||"erro");if(sync.seq===seq0)sync.dirty=false;if(sy.k&&!sy.e)syPatch({e:1});setSync("ok")}).catch(function(e){setSync("err");toast(String(e.message||e).indexOf("PIN")>=0?"PIN incorreto.":"Sem conexão. As alterações ficam salvas no aparelho.")});
 }
 function pull(){
-  var sy=SY();if(!sy.api)return Promise.resolve();setSync("syncing");sync.last=Date.now();
+  var sy=SY();if(!sy.api)return Promise.resolve();setSync("syncing");sync.last=Date.now();sync.block=false;sync.err="";var plain=false;
   return post({a:"login",p:sy.id,pin:sy.pin,nome:sy.id}).then(function(r){if(!r.ok)throw new Error(r.erro||"erro");return post({a:"load",p:sy.id,pin:sy.pin})}).then(function(r){
-    if(!r.ok)throw new Error(r.erro||"erro");return unpack(r.data||"")
-  }).then(function(txt){
-    var remote=null;try{remote=txt?JSON.parse(txt):null}catch(e){}
-    if(!remote)return push();
+    if(!r.ok)throw new Error(r.erro||"erro");var raw=r.data||"";plain=!!raw&&raw.indexOf("e1:")!==0;return unseal(raw)
+  }).then(unpack).then(function(txt){
+    if(!txt)return push();
+    var remote=null;try{remote=JSON.parse(txt)}catch(e){}
+    if(!remote||typeof remote!=="object"||!Array.isArray(remote.tx))throw new Error("E2E_FMT");
+    if(plain&&sy.k&&sy.e){toast("A nuvem tinha dados sem criptografia (outro aparelho desatualizado ou sem a senha). Regravei criptografado.");return push()}   /* não mescla texto aberto depois que a criptografia já estava valendo */
     try{localStorage.setItem("joint.backup",JSON.stringify(S))}catch(e){}
     S=mergeState(S,remote);ensureRec();persist();render();return push();
-  }).catch(function(e){setSync("err");toast(String(e.message||e).indexOf("PIN")>=0?"PIN incorreto.":"Não consegui sincronizar agora.")});
+  }).catch(function(e){var m=String(e.message||e);if(SYERR[m]){sync.block=true;sync.err=SYERR[m]}setSync("err");toast(SYERR[m]||(m.indexOf("PIN")>=0?"PIN incorreto.":"Não consegui sincronizar agora."))});
 }
 document.addEventListener("visibilitychange",function(){if(started&&document.visibilityState==="visible"&&sync.st!=="off"&&Date.now()-sync.last>20000)pull()});
 
@@ -1502,7 +1552,7 @@ function boot(){
   var sp=$("#splash");if(sp){setTimeout(function(){sp.classList.add("out");setTimeout(function(){if(sp.parentNode)sp.parentNode.removeChild(sp)},450)},Math.max(0,800-performance.now()))}
 }
 boot();
-window.__joint={S:function(){return S}}; /* ajuda de depuração */
+window.__joint={S:function(){return S},sync:function(){return {st:sync.st,block:sync.block,err:sync.err||""}},pull:function(){return pull()}}; /* ajuda de depuração */
 })();
 
 </script>

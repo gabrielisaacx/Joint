@@ -1,6 +1,6 @@
 const fs=require("fs"),vm=require("vm"),assert=require("assert");
-const ctx={};vm.createContext(ctx);const html=fs.readFileSync(__dirname+"/../index.html","utf8");const a=html.indexOf("/* ===== NÚCLEO FINANCEIRO"),b=html.indexOf("/* ===== FIM DO NÚCLEO");if(a<0||b<0)throw new Error("núcleo não encontrado no index.html");vm.runInContext(html.slice(a,b),ctx);
-const {simulate,solvePmt,solveMonths,fvClosed,mRate,irRate,shares,balance,parseMoney,dayAdd,dayDiff,logStreak,planStreak,milestones,streakScan,addMonths,invoiceOf,splitParcelas,parcelPV,parcelRate}=ctx;
+const ctx={};vm.createContext(ctx);vm.runInContext(fs.readFileSync(__dirname+"/../core.js","utf8"),ctx);
+const {simulate,solvePmt,solveMonths,fvClosed,mRate,irRate,shares,balance,parseMoney,dayAdd,dayDiff,logStreak,planStreak,milestones,streakScan,addMonths,invoiceOf,splitParcelas,parcelPV,parcelRate,diagnose}=ctx;
 let n=0;function ok(name,f){f();n++;console.log("ok -",name)}
 const near=(a,b,t,m)=>assert(Math.abs(a-b)<=t,(m||"")+" "+a+" vs "+b);
 
@@ -91,4 +91,24 @@ ok("valor presente do parcelado: taxa zero = total; maior taxa = menor valor; n=
 ok("taxa implícita: à vista = total => nenhuma; com desconto fecha a equação",()=>{
   assert.strictEqual(parcelRate(120000,120000,12),null);
   const i=parcelRate(100000,120000,12);assert(i>0);let s=0;splitParcelas(120000,12).forEach((p,k)=>s+=p/Math.pow(1+i,k+1));near(s,100000,1e-3)});
+ok("diagnóstico: sem renda => não analisa",()=>assert.strictEqual(diagnose({inc:0,exp:100,fixed:0,cat:{}}).ok,false));
+ok("diagnóstico: saudável (poupa 25%, fixos 30%, reserva 6m) => Boa",()=>{
+  const d=diagnose({inc:1000000,exp:750000,fixed:300000,cat:{Moradia:300000,Mercado:150000,Lazer:100000,Restaurantes:50000},saveTarget:20,reserveM:6,reserveAvg:750000,prev:[{exp:760000,cat:{}}]});
+  assert.strictEqual(d.level,"Boa");assert(d.score>=90,d.score);assert.strictEqual(d.actions.length,0)});
+ok("diagnóstico: gastou mais que ganhou => Crítica (nota limitada a 49) e ação de corte",()=>{
+  const d=diagnose({inc:500000,exp:600000,fixed:350000,cat:{Moradia:300000,Lazer:200000},saveTarget:20,reserveM:0.5,reserveAvg:600000});
+  assert.strictEqual(d.level,"Crítica");assert(d.score<=49);assert(d.rate<0);
+  assert(d.items.find(i=>i.id==="save").sev==="bad");assert(d.actions.some(a=>/faltam R\$ 2\.000/.test(a)),d.actions.join("|"))});
+ok("diagnóstico: faixa intermediária (poupa 10%, fixos 45%) => Atenção",()=>{
+  const d=diagnose({inc:1000000,exp:900000,fixed:450000,cat:{Moradia:450000,Mercado:100000,Lazer:200000,Restaurantes:100000,Outros:50000},saveTarget:20});
+  assert.strictEqual(d.level,"Atenção",d.score);assert.strictEqual(d.items.find(i=>i.id==="fixed").sev,"warn");assert.strictEqual(d.items.find(i=>i.id==="save").sev,"warn")});
+ok("diagnóstico: detecta categoria que subiu e limite estourado",()=>{
+  const d=diagnose({inc:1000000,exp:800000,fixed:0,cat:{Restaurantes:300000,Mercado:100000},bud:{Mercado:80000},saveTarget:20,prev:[{exp:600000,cat:{Restaurantes:100000,Mercado:100000}}]});
+  assert(d.items.find(i=>i.id==="up").txt.includes("Restaurantes"));assert(d.items.find(i=>i.id==="bud").txt.includes("Mercado"))});
+ok("diagnóstico: mês em aberto não pontua tendência (gasto parcial x média de meses inteiros)",()=>{
+  const b={inc:1000000,exp:300000,fixed:0,cat:{Mercado:300000},saveTarget:20,prev:[{exp:800000,cat:{}}]};
+  const f=diagnose(b).items.find(i=>i.id==="trend"),pt=diagnose(Object.assign({partial:true},b)).items.find(i=>i.id==="trend");
+  assert.strictEqual(f.max,10);assert.strictEqual(pt.max,0);assert.strictEqual(pt.pts,0);assert(/mês fechado/.test(pt.txt))});
+ok("diagnóstico: reserva usa plural correto",()=>{
+  const d=diagnose({inc:1000000,exp:500000,fixed:0,cat:{},reserveM:4.5,reserveAvg:500000});assert(/4,5 meses de gastos/.test(d.items.find(i=>i.id==="reserve").txt))});
 console.log("\n"+n+" testes passaram");
