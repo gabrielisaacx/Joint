@@ -62,3 +62,9 @@ Na Home, o cartão **Diagnóstico financeiro** abre uma análise do mês (Casal,
 
 ## Fixos nos próximos meses
 Fixos (marcados com "Repetir todo mês") aparecem no mês atual e nos 11 seguintes, para dar para acompanhar dezembro, janeiro etc. Editar o valor em Fixos muda só os meses seguintes ao atual e só os lançamentos que ninguém editou à mão; "Parar este fixo" remove os futuros e mantém o histórico. Para lançamentos que já existem, use **Fixos > Replicar lançamentos do mês** (ou o cartão que aparece na Home quando o mês seguinte está vazio): você escolhe quais viram fixos. Fixos de datas futuras não entram no saldo entre vocês nem no cartão Comprometido.
+
+## Gráficos
+- **Evolução (Home):** receita e despesa de 6 meses (3 anteriores, o atual e 2 futuros), com a sobra em número abaixo de cada mês. Meses futuros aparecem mais claros e mostram só o planejado. Toque num mês para ver os valores e abrir.
+- **Ritmo do mês (Home):** gasto acumulado dia a dia contra o mês anterior. Toque para ver o valor de um dia.
+- **Categorias:** cada barra traz um marcador da média dos até 3 meses anteriores e outro do limite, com a diferença em R$.
+- **Diagnóstico:** barra por critério e nota mês a mês.
