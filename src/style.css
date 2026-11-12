@@ -235,3 +235,14 @@ b.big{font-family:var(--display);font-weight:600;font-size:1.5rem;line-height:1}
 .chip{border:1px solid var(--line);background:var(--surface2);border-radius:999px;padding:8px 12px;font-size:.8rem;font-weight:600;color:var(--muted);min-height:38px;text-align:left}
 .chip b{color:var(--fg);font-weight:800}.chip small{font-weight:600;opacity:.8}
 input[type=search]{width:100%;background:var(--surface2);border:1px solid var(--line);border-radius:14px;padding:10px 14px;min-height:44px;font-size:16px;color:var(--fg);-webkit-appearance:none;appearance:none}
+
+/* ===== importar fatura ===== */
+.improw{border-top:1px solid var(--line);padding:8px 0 6px;display:flex;flex-direction:column;gap:6px}
+.improw.off{opacity:.5}
+.improw label.chk{flex-direction:row;align-items:center;gap:10px;font-weight:500;color:var(--fg)}
+.improw label.chk input{flex:none;width:22px;height:22px}
+.improw .grow{display:flex;flex-direction:column;min-width:0}
+.improw .grow b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.92rem}
+.improw small{color:var(--muted);font-size:.74rem}
+.improw .v{flex:none;font-variant-numeric:tabular-nums;font-size:.92rem}
+.improw select{min-height:38px;padding:4px 8px;font-size:16px;border-radius:10px}

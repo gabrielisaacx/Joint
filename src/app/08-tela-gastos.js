@@ -10,6 +10,7 @@ function vGastos(){
   h+='<div class="card"><div class="row sp"><h4>Por categoria</h4><button class="ghost" data-act="fixos">Fixos</button></div>'+catBars(sm,whoF<0,0,cav)+(cav?'<div class="legendrow"><span><u class="tk s"></u>Média dos '+cav._n+(cav._n>1?' meses anteriores':' mês anterior')+'</span>'+(whoF<0?'<span><u class="tk l s"></u>Limite</span>':'')+'</div>':'')+(whoF<0?'<div class="row sp"><p class="note">Toque em uma categoria para definir o limite.</p><button class="ghost" data-act="sug">Sugerir limites</button></div>':'')+'</div>';
   var cds=live(S.cards);
   if(cds.length){h+='<div class="card"><h4>Faturas</h4>';cds.forEach(function(c){var its=monthTx(ym).filter(function(t){return t.cd===c.id&&t.k==="o"}),tot=its.reduce(function(a,t){return a+t.v},0);h+='<div class="row sp"><span><b>'+esc(c.name)+'</b> <span class="note">vence '+pad(Math.min(c.due,dim(ym)))+'/'+ym.slice(5,7)+' · '+its.length+(its.length===1?' item':' itens')+'</span></span><b>'+brl(tot)+'</b></div>'});h+='<p class="note">Compras no cartão entram no mês em que a fatura vence. A data de cada item é a da compra.</p></div>'}
+  h+='<button class="btn sec full" data-act="pdf">Importar fatura do cartão (PDF)</button>';
   h+='<div class="card"><h4>Lançamentos</h4><input type="search" id="txq" value="'+esc(txQ)+'" placeholder="Buscar nome, categoria ou cartão (todos os meses)" autocomplete="off" enterkeyhint="search"><div id="txl">'+txList()+'</div></div>';
   return h+'</div>';
 }

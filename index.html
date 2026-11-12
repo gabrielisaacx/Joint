@@ -265,6 +265,17 @@ b.big{font-family:var(--display);font-weight:600;font-size:1.5rem;line-height:1}
 .chip b{color:var(--fg);font-weight:800}.chip small{font-weight:600;opacity:.8}
 input[type=search]{width:100%;background:var(--surface2);border:1px solid var(--line);border-radius:14px;padding:10px 14px;min-height:44px;font-size:16px;color:var(--fg);-webkit-appearance:none;appearance:none}
 
+/* ===== importar fatura ===== */
+.improw{border-top:1px solid var(--line);padding:8px 0 6px;display:flex;flex-direction:column;gap:6px}
+.improw.off{opacity:.5}
+.improw label.chk{flex-direction:row;align-items:center;gap:10px;font-weight:500;color:var(--fg)}
+.improw label.chk input{flex:none;width:22px;height:22px}
+.improw .grow{display:flex;flex-direction:column;min-width:0}
+.improw .grow b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.92rem}
+.improw small{color:var(--muted);font-size:.74rem}
+.improw .v{flex:none;font-variant-numeric:tabular-nums;font-size:.92rem}
+.improw select{min-height:38px;padding:4px 8px;font-size:16px;border-radius:10px}
+
 </style>
 </head>
 <body>
@@ -281,6 +292,7 @@ input[type=search]{width:100%;background:var(--surface2);border:1px solid var(--
 <div class="sheet" id="sheet" hidden><div class="sheet-bg" id="sheetBg"></div><div class="sheet-body" id="sheetBody" role="dialog" aria-modal="true"></div></div>
 <div class="toast" id="toast" hidden role="status"></div>
 <input type="file" id="file" accept="application/json,.json" hidden>
+<input type="file" id="pdf" accept="application/pdf,.pdf" hidden>
 <script>
 (function(){
 "use strict";
@@ -587,6 +599,74 @@ function quickPicks(list, q, n) {
   var a = Object.keys(by).map(function (k) { return by[k]; });
   a.sort(function (x, y) { return y.pre - x.pre || y.cnt - x.cnt || (x.t.d < y.t.d ? 1 : x.t.d > y.t.d ? -1 : 0); });
   return a.slice(0, n || 4).map(function (o) { return o.t; });
+}
+
+
+/* ---------- leitor de fatura (linhas de texto extraídas do PDF) ----------
+   Formato Nubank: "15 SET •••• 3783 Nome da loja - Parcela 2/5 R$ 54,59"; estorno e pagamento vêm com "−R$".
+   Vencimento em "FATURA 22 OUT 2026"; fechamento em "Período vigente: 15 SET a 15 OUT".
+   Ano de cada lançamento: o do vencimento, ou o anterior se o mês do lançamento for maior que o do vencimento (dez em fatura de jan).
+   Reserva genérica para outros bancos: linhas "dd/mm descrição 1.234,56". */
+var MES3 = { JAN: 1, FEV: 2, MAR: 3, ABR: 4, MAI: 5, JUN: 6, JUL: 7, AGO: 8, SET: 9, OUT: 10, NOV: 11, DEZ: 12 };
+function hash32(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
+function parseFatura(lines, todayIso) {
+  var inv = { bank: "", due: "", close: 0, dueDay: 0, total: null, items: [], pay: 0, generic: false }, m, i, l;
+  for (i = 0; i < lines.length; i++) {
+    l = lines[i];
+    if (!inv.due && (m = /(?:^FATURA|vencimento:?)\s+(\d{2}) ([A-Z]{3}) (\d{4})/i.exec(l)) && MES3[m[2].toUpperCase()]) { inv.due = m[3] + "-" + p2(MES3[m[2].toUpperCase()]) + "-" + m[1]; inv.dueDay = +m[1]; }
+    if (!inv.close && (m = /Per[ií]odo vigente: \d{2} [A-Z]{3} a (\d{2}) [A-Z]{3}/i.exec(l))) inv.close = +m[1];
+    if (!inv.bank && /Nu Pagamentos|Nubank/i.test(l)) inv.bank = "Nubank";
+    if (inv.total === null && (m = /^Total a pagar R\$ ([\d.]+,\d{2})$/.exec(l))) inv.total = parseMoney(m[1]);
+  }
+  var dy = inv.due ? +inv.due.slice(0, 4) : 0, dm = inv.due ? +inv.due.slice(5, 7) : 0;
+  var re = /^(\d{2}) (JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ) (?:•••• (\d{4}) )?(.+?) ([−\-]?)R\$ ([\d.]+,\d{2})$/, fin = false;
+  for (i = 0; i < lines.length; i++) {
+    l = lines[i];
+    if (/^Pagamentos e Financiamentos\b/.test(l)) { fin = true; continue; }
+    if (!(m = re.exec(l)) || !dy) continue;
+    var mon = MES3[m[2]], name = m[4].trim(), neg = !!m[5], v = parseMoney(m[6]), it = { d: (mon > dm ? dy - 1 : dy) + "-" + p2(mon) + "-" + m[1], n: name, v: v, kind: fin ? "fin" : "buy", card4: m[3] || "" };
+    if (neg && /^Pagamento em \d{2} [A-Z]{3}$/.test(name)) { inv.pay++; continue; }
+    var pm = /^(.*?) - Parcela (\d+)\/(\d+)$/.exec(name);
+    if (pm && +pm[3] >= 1 && +pm[2] >= 1 && +pm[2] <= +pm[3]) { it.n = pm[1].trim(); it["in"] = +pm[2]; it.it = +pm[3]; }
+    if (neg) { it.kind = "ref"; var rm = /^Estorno de "(.+)"$/.exec(name); if (rm) it.ref = rm[1]; }
+    if (v > 0) inv.items.push(it);
+  }
+  if (!inv.items.length) {   /* genérico */
+    var rg = /^(\d{2})\/(\d{2})(?:\/(\d{2,4}))? (.+?) (-?) ?(?:R\$ ?)?([\d.]+,\d{2})$/, t = todayIso || "9999-12-31";
+    for (i = 0; i < lines.length; i++) {
+      if (!(m = rg.exec(lines[i]))) continue;
+      var d = +m[1], mo = +m[2]; if (d < 1 || d > 31 || mo < 1 || mo > 12) continue;
+      var y = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : +t.slice(0, 4), iso = y + "-" + p2(mo) + "-" + p2(d);
+      if (!m[3] && iso > t) iso = (y - 1) + iso.slice(4);
+      var g = { d: iso, n: m[4].trim(), v: parseMoney(m[6]), kind: m[5] ? "ref" : "buy", card4: "" };
+      var gp = /^(.*?)[ \-]+(?:Parcela )?(\d{1,2})\/(\d{1,2})$/.exec(g.n);
+      if (gp && +gp[3] >= 2 && +gp[2] >= 1 && +gp[2] <= +gp[3]) { g.n = gp[1].trim(); g["in"] = +gp[2]; g.it = +gp[3]; }
+      if (g.v > 0 && g.n) inv.items.push(g);
+    }
+    inv.generic = inv.items.length > 0;
+  }
+  /* estorno de compra que está na mesma fatura: os dois se anulam */
+  inv.items.forEach(function (r) {
+    if (r.kind !== "ref" || !r.ref) return;
+    for (var k = 0; k < inv.items.length; k++) { var b = inv.items[k]; if (b.kind === "buy" && !b["in"] && b.v === r.v && normTxt(b.n) === normTxt(r.ref)) { b.kind = "can"; r.kind = "can"; break; } }
+  });
+  return inv;
+}
+/* categoria provável pelo nome do estabelecimento (só quando não há histórico com o mesmo nome) */
+var CAT_HINT = [
+  ["Transporte", /\buber\b|^99|99app|\bposto\b|autopass|estaciona|pedagio|sem parar|metro|combust/],
+  ["Restaurantes", /ifood|restaur|lanch|pizza|burger|foods?\b|padaria|\bbar\b|cafe|sushi|rappi/],
+  ["Mercado", /mercado(?!li)|atacad|supermerc|carrefour|assai|hortifruti|sacolao|pao de acucar/],
+  ["Assinaturas", /apple\.com|spotify|netflix|amazon prime|disney|youtube|wellhub|gympass|nucel|recarga de celular|google \*/],
+  ["Viagem", /gol linhas|latam|azul linhas|booking|airbnb|decolar|hotel|pousada/],
+  ["Saúde", /drog|farm|clinica|hospital|laborat|odonto/],
+  ["Educação", /curso|escola|faculd|estudos|udemy|alura|livraria/],
+  ["Pessoal", /shopee|renner|riachuelo|c&a|tiktok|mercadoli|amazon|magalu|shein|zara|variedades/]
+];
+function guessCat(name, cats) {
+  var n = normTxt(name);
+  for (var i = 0; i < CAT_HINT.length; i++) if (CAT_HINT[i][1].test(n) && cats.indexOf(CAT_HINT[i][0]) >= 0) return CAT_HINT[i][0];
+  return cats.indexOf("Outros") >= 0 ? "Outros" : cats[cats.length - 1];
 }
 
 /* ===== FIM DO NÚCLEO ===== */
@@ -1078,6 +1158,7 @@ function vGastos(){
   h+='<div class="card"><div class="row sp"><h4>Por categoria</h4><button class="ghost" data-act="fixos">Fixos</button></div>'+catBars(sm,whoF<0,0,cav)+(cav?'<div class="legendrow"><span><u class="tk s"></u>Média dos '+cav._n+(cav._n>1?' meses anteriores':' mês anterior')+'</span>'+(whoF<0?'<span><u class="tk l s"></u>Limite</span>':'')+'</div>':'')+(whoF<0?'<div class="row sp"><p class="note">Toque em uma categoria para definir o limite.</p><button class="ghost" data-act="sug">Sugerir limites</button></div>':'')+'</div>';
   var cds=live(S.cards);
   if(cds.length){h+='<div class="card"><h4>Faturas</h4>';cds.forEach(function(c){var its=monthTx(ym).filter(function(t){return t.cd===c.id&&t.k==="o"}),tot=its.reduce(function(a,t){return a+t.v},0);h+='<div class="row sp"><span><b>'+esc(c.name)+'</b> <span class="note">vence '+pad(Math.min(c.due,dim(ym)))+'/'+ym.slice(5,7)+' · '+its.length+(its.length===1?' item':' itens')+'</span></span><b>'+brl(tot)+'</b></div>'});h+='<p class="note">Compras no cartão entram no mês em que a fatura vence. A data de cada item é a da compra.</p></div>'}
+  h+='<button class="btn sec full" data-act="pdf">Importar fatura do cartão (PDF)</button>';
   h+='<div class="card"><h4>Lançamentos</h4><input type="search" id="txq" value="'+esc(txQ)+'" placeholder="Buscar nome, categoria ou cartão (todos os meses)" autocomplete="off" enterkeyhint="search"><div id="txl">'+txList()+'</div></div>';
   return h+'</div>';
 }
@@ -1522,6 +1603,10 @@ var A={
   },
   export:function(){dl("joint-backup-"+today()+".json","application/json",JSON.stringify(S));try{localStorage.setItem("joint.bkp",String(Date.now()))}catch(x){}toast("Backup exportado. Guarde o arquivo fora do celular.");if(tab==="home"&&$("#sheet").hidden)render()},
   import:function(){$("#file").click()},
+  pdf:function(){$("#pdf").click()},
+  imppw:function(){var p=fields().ppw||"";if(!p){toast("Digite a senha do PDF.");return}closeSheet();impRead(p)},
+  impall:function(e){var on=e.dataset.id==="1";imp.rows.forEach(function(r){if(!r.lock)r.sel=on});var sc=$("#sheetBody").scrollTop;impDraw();$("#sheetBody").scrollTop=sc},
+  impgo:function(){impGo()},
   wipe:function(){if(!confirm("Apagar TODOS os dados deste aparelho? Se a sincronização estiver ligada, eles voltam do servidor."))return;try{localStorage.removeItem(KEY)}catch(e){}S=blank();persist();closeSheet();render();toast("Dados apagados.")}
 };
 function slug(n){return String(n||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]/g,"").slice(0,30)}
@@ -1547,6 +1632,8 @@ document.addEventListener("input",function(ev){var e=ev.target;if(sheetKind==="t
   if(sheetKind==="wif"&&e.dataset&&(e.dataset.f==="wm"||e.dataset.f==="wx"))wifOut();
   if(e.id==="txq"){txQ=e.value;var l=$("#txl");if(l)l.innerHTML=txList()}});
 document.addEventListener("change",function(ev){
+  if(ev.target.id==="pdf"){var pf=ev.target.files[0];ev.target.value="";impFile(pf);return}
+  if(sheetKind==="imp"&&ev.target.dataset&&(ev.target.dataset.imp!=null||ev.target.dataset.impc!=null||ev.target.dataset.imps!=null||/^(icd|iw|im|ifut|is)$/.test(ev.target.dataset.f||""))){impChange(ev.target);return}
   if(sheetKind==="tx"&&ev.target.dataset&&(ev.target.dataset.f==="cd"||ev.target.dataset.f==="d"))parcHint();
   if(ev.target.id==="file"){
     var f=ev.target.files[0];if(!f)return;var rd=new FileReader();
@@ -1735,6 +1822,122 @@ document.addEventListener("visibilitychange",function(){
 });
 function openPin(){sheetKind="pin";openSheet('<h3>Alterar PIN</h3><label class="f">PIN atual<input type="password" inputmode="numeric" maxlength="4" autocomplete="current-password" data-f="p0"></label><div class="grid2"><label class="f">Novo PIN<input type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" data-f="p1"></label><label class="f">Repita<input type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" data-f="p2"></label></div><button class="btn full" data-act="pinsave">Salvar novo PIN</button><button class="btn sec full" data-act="close">Cancelar</button>')}
 
+/* ---------- importar fatura em PDF ----------
+   O PDF é lido no próprio aparelho (pdf.js, servido junto com o app em vendor/); nada da fatura é enviado para fora.
+   Fluxo: arquivo -> linhas de texto -> parseFatura (core) -> tela de revisão -> lançamentos.
+   Ids são derivados do conteúdo (cartão, data, nome, valor), então importar a mesma fatura duas vezes não duplica. */
+var imp=null,impBuf=null;
+function loadPdfLib(){
+  if(window.pdfjsLib)return Promise.resolve(window.pdfjsLib);
+  return new Promise(function(ok,no){var s=document.createElement("script");s.src="vendor/pdf.min.js";
+    s.onload=function(){if(!window.pdfjsLib){no(new Error("LIB"));return}window.pdfjsLib.GlobalWorkerOptions.workerSrc="vendor/pdf.worker.min.js";ok(window.pdfjsLib)};
+    s.onerror=function(){no(new Error("LIB"))};document.head.appendChild(s)});
+}
+function pdfPageLines(items){   /* junta os trechos de texto da mesma linha (mesma altura) e ordena da esquerda para a direita */
+  var rows=[];
+  items.forEach(function(it){if(!it.str||!it.str.trim())return;var x=it.transform[4],y=it.transform[5],r=null;
+    for(var i=0;i<rows.length;i++)if(Math.abs(rows[i].y-y)<3){r=rows[i];break}
+    if(!r){r={y:y,p:[]};rows.push(r)}r.p.push({x:x,s:it.str})});
+  rows.sort(function(a,b){return b.y-a.y});
+  return rows.map(function(r){return r.p.sort(function(a,b){return a.x-b.x}).map(function(p){return p.s}).join(" ").replace(/\s+/g," ").trim()});
+}
+function pdfLines(buf,pw){
+  return loadPdfLib().then(function(lib){return lib.getDocument({data:new Uint8Array(buf.slice(0)),password:pw||undefined}).promise}).then(function(doc){
+    var out=[],i=1;
+    function next(){if(i>doc.numPages)return out;return doc.getPage(i++).then(function(pg){return pg.getTextContent()}).then(function(tc){out=out.concat(pdfPageLines(tc.items));return next()})}
+    return next();
+  });
+}
+function impFile(file){
+  if(!file)return;if(file.size>15e6){toast("Arquivo grande demais para uma fatura.");return}
+  var rd=new FileReader();rd.onload=function(){impBuf=rd.result;impRead("")};rd.onerror=function(){toast("Não consegui abrir o arquivo.")};rd.readAsArrayBuffer(file);
+}
+function impRead(pw){
+  toast("Lendo a fatura…");
+  pdfLines(impBuf,pw).then(function(lines){
+    var inv=parseFatura(lines,today());
+    if(!inv.items.length){impBuf=null;sheetKind="imp0";openSheet('<h3>Não encontrei lançamentos</h3><p class="note">O arquivo abriu, mas não reconheci linhas de compra. Isso acontece com fatura escaneada (imagem) ou com um formato de banco que ainda não conheço. Hoje o leitor está ajustado para o Nubank e tenta um formato genérico (dd/mm, descrição, valor) para os demais.</p><button class="btn sec full" data-act="close">Fechar</button>');return}
+    impOpen(inv);
+  }).catch(function(e){
+    var nm=e&&e.name,msg=String(e&&e.message||e);
+    if(nm==="PasswordException"){sheetKind="imppw";openSheet('<h3>PDF protegido</h3><p class="note">'+(pw?'Senha incorreta. ':'')+'Esta fatura abre com senha (alguns bancos usam dígitos do CPF). A senha é usada só aqui, para abrir o arquivo, e não fica guardada.</p><label class="f">Senha do PDF<input type="password" data-f="ppw" autocomplete="off"></label><button class="btn full" data-act="imppw">Abrir</button><button class="btn sec full" data-act="close">Cancelar</button>');return}
+    impBuf=null;toast(msg==="LIB"?"Não consegui carregar o leitor de PDF. Confira a conexão e tente de novo.":"Não consegui ler este PDF.");
+  });
+}
+function impCat(n){   /* primeiro o histórico do casal com o mesmo nome; depois palavras-chave */
+  var k=normTxt(n),best=null;S.tx.forEach(function(t){if(!t.x&&t.k==="o"&&normTxt(t.n)===k&&(!best||t.d>best.d))best=t});
+  return best&&S.cfg.cats.indexOf(best.c)>=0?best.c:guessCat(n,S.cfg.cats);
+}
+function impOpen(inv){
+  var cur=today().slice(0,7),m=inv.due?inv.due.slice(0,7):cur,occ={},cards=live(S.cards),cd="";
+  cards.forEach(function(c){if(!cd&&inv.bank&&normTxt(c.name).indexOf(normTxt(inv.bank))>=0)cd=c.id});
+  if(!cd)cd=inv.bank&&inv.close&&inv.dueDay?"new":(cards[0]?cards[0].id:"");
+  var rows=[];
+  inv.items.forEach(function(it){
+    if(it.kind==="can")return;
+    var r={d:it.d,n:it.n,v:it.v,kind:it.kind,card4:it.card4,sel:true,s:1,c:impCat(it.n),tag:""};
+    if(it["in"]){r["in"]=it["in"];r.it=it.it;var st=ymAdd(m,-(it["in"]-1)),gk=[normTxt(it.n),it.it,st].join("|"),go=occ[gk+"#"+it["in"]]=(occ[gk+"#"+it["in"]]||0)+1;r.gid="f"+hash32(gk+"|"+go);r.id="p"+r.gid+"_"+it["in"]}
+    else{var key=[it.kind,it.card4,it.d,normTxt(it.n),it.v].join("|"),o=occ[key]=(occ[key]||0)+1;r.id="i"+hash32(key+"|"+o)}
+    if(it.kind==="ref"){r.n="Estorno: "+(it.ref||it.n);r.sel=false;r.tag="estorno, entra como receita"}
+    if(it.kind==="fin")r.tag="Pix ou financiamento no crédito";
+    var ex=find(S.tx,r.id);
+    if(ex&&!ex.x){r.sel=false;r.lock=true;r.tag="já lançado"}
+    else if(ex&&ex.x){r.sel=false;r.tag="excluído antes"}
+    else if(it.kind!=="ref"&&S.tx.some(function(t){return !t.x&&t.k==="o"&&t.v===it.v&&(it["in"]?(t["in"]===it["in"]&&t.it===it.it&&tm(t)===m):Math.abs(dayDiff(t.d,it.d))<=1)})){r.sel=false;r.tag="possível duplicado"}
+    rows.push(r);
+  });
+  imp={inv:inv,rows:rows,m:m,cd:cd,w:ME(),fut:true,can:inv.items.filter(function(i){return i.kind==="can"}).length/2};
+  sheetKind="imp";impDraw();
+}
+function impSum(){var n=0,s=0;imp.rows.forEach(function(r){if(r.sel){n++;s+=r.kind==="ref"?-r.v:r.v}});return {n:n,s:s}}
+function impDraw(){
+  var I=imp,inv=I.inv,cards=live(S.cards),sm=impSum();
+  var h='<h3>Importar fatura'+(inv.bank?' · '+esc(inv.bank):'')+'</h3><p class="note">'+(inv.due?'Vence em <b>'+dBR(inv.due)+'</b>. ':'')+'Li <b>'+I.rows.length+'</b> lançamentos'+'. Confira antes de lançar: nada entra sem você confirmar.</p>';
+  if(inv.generic)h+='<p class="note"><b>Leitura genérica.</b> Não reconheci o banco, então usei o formato dd/mm, descrição e valor. Confira com mais atenção.</p>';
+  h+='<div class="grid2"><label class="f">Cartão<select data-f="icd">'+(inv.bank&&inv.close&&inv.dueDay?'<option value="new"'+(I.cd==="new"?' selected':'')+'>Novo: '+esc(inv.bank)+' (fecha '+inv.close+', vence '+inv.dueDay+')</option>':'')+cards.map(function(c){return '<option value="'+c.id+'"'+(I.cd===c.id?' selected':'')+'>'+esc(c.name)+'</option>'}).join('')+'<option value=""'+(I.cd===""?' selected':'')+'>Sem cartão</option></select></label>'
+    +'<label class="f">Fatura de (mês)<input type="month" data-f="im" value="'+esc(I.m)+'"></label></div>'
+    +'<div class="grid2"><label class="f">Quem pagou<select data-f="iw"><option value="0"'+(I.w===0?' selected':'')+'>'+esc(NM(0))+'</option><option value="1"'+(I.w===1?' selected':'')+'>'+esc(NM(1))+'</option></select></label>'
+    +'<label class="f">Divisão de todos<select data-f="is"><option value="">manter</option><option value="1">Só de quem pagou</option><option value="0">Dividir entre o casal</option></select></label></div>'
+    +'<label class="f chk"><input type="checkbox" data-f="ifut"'+(I.fut?' checked':'')+'> Lançar também as parcelas que ainda vão vencer</label>'
+    +'<div class="row sp"><p class="note" id="impsum"></p><span class="row" style="gap:6px"><button class="ghost" data-act="impall" data-id="1">Todos</button><button class="ghost" data-act="impall" data-id="0">Nenhum</button></span></div>';
+  I.rows.forEach(function(r,i){
+    h+='<div class="improw'+(r.lock?' off':'')+'"><label class="f chk"><input type="checkbox" data-imp="'+i+'"'+(r.sel?' checked':'')+(r.lock?' disabled':'')+'><span class="grow"><b>'+esc(r.n)+'</b><small>'+r.d.slice(8,10)+'/'+r.d.slice(5,7)+(r["in"]?' · parcela '+r["in"]+'/'+r.it:'')+(r.card4?' · final '+esc(r.card4):'')+(r.tag?' · <u>'+esc(r.tag)+'</u>':'')+'</small></span><b class="v">'+(r.kind==="ref"?'+ ':'')+brl(r.v)+'</b></label>'
+      +(r.lock||r.kind==="ref"?'':'<div class="grid2"><select data-impc="'+i+'" aria-label="Categoria">'+opts(S.cfg.cats,r.c)+'</select><select data-imps="'+i+'" aria-label="Divisão"><option value="1"'+(r.s===1?' selected':'')+'>Só de quem pagou</option><option value="0"'+(r.s===0?' selected':'')+'>Dividir no casal</option><option value="2"'+(r.s===2?' selected':'')+'>Só do outro</option></select></div>')+'</div>';
+  });
+  h+='<p class="note">Ficaram de fora: '+inv.pay+' pagamentos da própria fatura'+(I.can?' e '+I.can+(I.can===1?' compra estornada':' compras estornadas')+' na mesma fatura':'')+'. Itens marcados como "possível duplicado" têm um lançamento de mesmo valor em data próxima.</p>'
+    +'<button class="btn full" data-act="impgo">Lançar selecionados</button><button class="btn sec full" data-act="close">Cancelar</button>';
+  openSheet(h);impUpd();
+}
+function impUpd(){var s=impSum(),e=$("#impsum");if(e)e.innerHTML='<b>'+s.n+'</b> selecionados · <b>'+brl(s.s)+'</b>'}
+function impChange(e){
+  var d=e.dataset,I=imp;if(!I)return;
+  if(d.imp!=null){I.rows[+d.imp].sel=e.checked;impUpd()}
+  else if(d.impc!=null){var r=I.rows[+d.impc],k=normTxt(r.n);r.c=e.value;I.rows.forEach(function(o,i){if(o!==r&&normTxt(o.n)===k&&!o.lock){o.c=e.value;var s=$('#sheetBody [data-impc="'+i+'"]');if(s)s.value=e.value}})}   /* mesma loja: mesma categoria */
+  else if(d.imps!=null)I.rows[+d.imps].s=+e.value;
+  else if(d.f==="icd")I.cd=e.value;
+  else if(d.f==="iw")I.w=+e.value;
+  else if(d.f==="im"){if(/^\d{4}-\d{2}$/.test(e.value))I.m=e.value}
+  else if(d.f==="ifut")I.fut=e.checked;
+  else if(d.f==="is"&&e.value!==""){var v=+e.value;I.rows.forEach(function(o){if(!o.lock)o.s=v});var sc=$("#sheetBody").scrollTop;impDraw();$("#sheetBody").scrollTop=sc}
+}
+function impGo(){
+  var I=imp,inv=I.inv,sel=I.rows.filter(function(r){return r.sel&&!r.lock});
+  if(!sel.length){toast("Marque ao menos um lançamento.");return}
+  var card=null;
+  if(I.cd==="new"){card={id:uid(),name:inv.bank||"Cartão",close:Math.min(28,inv.close||1),due:Math.min(28,inv.dueDay||10),w:I.w};upsert(S.cards,card)}
+  else if(I.cd)card=find(S.cards,I.cd);
+  var n=0,fut=0,incCat=INC.indexOf("Outros")>=0?"Outros":INC[0];
+  sel.forEach(function(r){
+    var o={id:r.id,k:r.kind==="ref"?"i":"o",v:r.v,d:r.d,c:r.kind==="ref"?incCat:r.c,w:I.w,s:r.kind==="ref"?0:r.s,n:r.n,m:I.m};
+    if(card&&o.k==="o")o.cd=card.id;
+    if(r["in"]){o.ip=r.gid;o["in"]=r["in"];o.it=r.it}
+    upsert(S.tx,o);n++;
+    if(r["in"]&&I.fut)for(var k=r["in"]+1;k<=r.it;k++){var id="p"+r.gid+"_"+k;if(find(S.tx,id))continue;
+      var f={id:id,k:"o",v:r.v,d:addMonths(r.d,k-r["in"]),c:r.c,w:I.w,s:r.s,n:r.n,m:ymAdd(I.m,k-r["in"]),ip:r.gid,it:r.it};f["in"]=k;if(card)f.cd=card.id;upsert(S.tx,f);fut++}
+  });
+  imp=null;impBuf=null;month=I.m;tab="gastos";goalId=null;txQ="";save();closeSheet();render();window.scrollTo(0,0);
+  toast(n+(n===1?" lançamento importado":" lançamentos importados")+(fut?" e "+fut+(fut===1?" parcela futura":" parcelas futuras"):"")+".");
+}
 /* ---------- tema e início ---------- */
 function applyTheme(){var t=localStorage.getItem(THKEY)||"auto";if(t==="auto")document.documentElement.removeAttribute("data-theme");else document.documentElement.setAttribute("data-theme",t)}
 applyTheme();

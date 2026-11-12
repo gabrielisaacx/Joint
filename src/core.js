@@ -303,4 +303,72 @@ function quickPicks(list, q, n) {
   return a.slice(0, n || 4).map(function (o) { return o.t; });
 }
 
+
+/* ---------- leitor de fatura (linhas de texto extraídas do PDF) ----------
+   Formato Nubank: "15 SET •••• 3783 Nome da loja - Parcela 2/5 R$ 54,59"; estorno e pagamento vêm com "−R$".
+   Vencimento em "FATURA 22 OUT 2026"; fechamento em "Período vigente: 15 SET a 15 OUT".
+   Ano de cada lançamento: o do vencimento, ou o anterior se o mês do lançamento for maior que o do vencimento (dez em fatura de jan).
+   Reserva genérica para outros bancos: linhas "dd/mm descrição 1.234,56". */
+var MES3 = { JAN: 1, FEV: 2, MAR: 3, ABR: 4, MAI: 5, JUN: 6, JUL: 7, AGO: 8, SET: 9, OUT: 10, NOV: 11, DEZ: 12 };
+function hash32(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
+function parseFatura(lines, todayIso) {
+  var inv = { bank: "", due: "", close: 0, dueDay: 0, total: null, items: [], pay: 0, generic: false }, m, i, l;
+  for (i = 0; i < lines.length; i++) {
+    l = lines[i];
+    if (!inv.due && (m = /(?:^FATURA|vencimento:?)\s+(\d{2}) ([A-Z]{3}) (\d{4})/i.exec(l)) && MES3[m[2].toUpperCase()]) { inv.due = m[3] + "-" + p2(MES3[m[2].toUpperCase()]) + "-" + m[1]; inv.dueDay = +m[1]; }
+    if (!inv.close && (m = /Per[ií]odo vigente: \d{2} [A-Z]{3} a (\d{2}) [A-Z]{3}/i.exec(l))) inv.close = +m[1];
+    if (!inv.bank && /Nu Pagamentos|Nubank/i.test(l)) inv.bank = "Nubank";
+    if (inv.total === null && (m = /^Total a pagar R\$ ([\d.]+,\d{2})$/.exec(l))) inv.total = parseMoney(m[1]);
+  }
+  var dy = inv.due ? +inv.due.slice(0, 4) : 0, dm = inv.due ? +inv.due.slice(5, 7) : 0;
+  var re = /^(\d{2}) (JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ) (?:•••• (\d{4}) )?(.+?) ([−\-]?)R\$ ([\d.]+,\d{2})$/, fin = false;
+  for (i = 0; i < lines.length; i++) {
+    l = lines[i];
+    if (/^Pagamentos e Financiamentos\b/.test(l)) { fin = true; continue; }
+    if (!(m = re.exec(l)) || !dy) continue;
+    var mon = MES3[m[2]], name = m[4].trim(), neg = !!m[5], v = parseMoney(m[6]), it = { d: (mon > dm ? dy - 1 : dy) + "-" + p2(mon) + "-" + m[1], n: name, v: v, kind: fin ? "fin" : "buy", card4: m[3] || "" };
+    if (neg && /^Pagamento em \d{2} [A-Z]{3}$/.test(name)) { inv.pay++; continue; }
+    var pm = /^(.*?) - Parcela (\d+)\/(\d+)$/.exec(name);
+    if (pm && +pm[3] >= 1 && +pm[2] >= 1 && +pm[2] <= +pm[3]) { it.n = pm[1].trim(); it["in"] = +pm[2]; it.it = +pm[3]; }
+    if (neg) { it.kind = "ref"; var rm = /^Estorno de "(.+)"$/.exec(name); if (rm) it.ref = rm[1]; }
+    if (v > 0) inv.items.push(it);
+  }
+  if (!inv.items.length) {   /* genérico */
+    var rg = /^(\d{2})\/(\d{2})(?:\/(\d{2,4}))? (.+?) (-?) ?(?:R\$ ?)?([\d.]+,\d{2})$/, t = todayIso || "9999-12-31";
+    for (i = 0; i < lines.length; i++) {
+      if (!(m = rg.exec(lines[i]))) continue;
+      var d = +m[1], mo = +m[2]; if (d < 1 || d > 31 || mo < 1 || mo > 12) continue;
+      var y = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : +t.slice(0, 4), iso = y + "-" + p2(mo) + "-" + p2(d);
+      if (!m[3] && iso > t) iso = (y - 1) + iso.slice(4);
+      var g = { d: iso, n: m[4].trim(), v: parseMoney(m[6]), kind: m[5] ? "ref" : "buy", card4: "" };
+      var gp = /^(.*?)[ \-]+(?:Parcela )?(\d{1,2})\/(\d{1,2})$/.exec(g.n);
+      if (gp && +gp[3] >= 2 && +gp[2] >= 1 && +gp[2] <= +gp[3]) { g.n = gp[1].trim(); g["in"] = +gp[2]; g.it = +gp[3]; }
+      if (g.v > 0 && g.n) inv.items.push(g);
+    }
+    inv.generic = inv.items.length > 0;
+  }
+  /* estorno de compra que está na mesma fatura: os dois se anulam */
+  inv.items.forEach(function (r) {
+    if (r.kind !== "ref" || !r.ref) return;
+    for (var k = 0; k < inv.items.length; k++) { var b = inv.items[k]; if (b.kind === "buy" && !b["in"] && b.v === r.v && normTxt(b.n) === normTxt(r.ref)) { b.kind = "can"; r.kind = "can"; break; } }
+  });
+  return inv;
+}
+/* categoria provável pelo nome do estabelecimento (só quando não há histórico com o mesmo nome) */
+var CAT_HINT = [
+  ["Transporte", /\buber\b|^99|99app|\bposto\b|autopass|estaciona|pedagio|sem parar|metro|combust/],
+  ["Restaurantes", /ifood|restaur|lanch|pizza|burger|foods?\b|padaria|\bbar\b|cafe|sushi|rappi/],
+  ["Mercado", /mercado(?!li)|atacad|supermerc|carrefour|assai|hortifruti|sacolao|pao de acucar/],
+  ["Assinaturas", /apple\.com|spotify|netflix|amazon prime|disney|youtube|wellhub|gympass|nucel|recarga de celular|google \*/],
+  ["Viagem", /gol linhas|latam|azul linhas|booking|airbnb|decolar|hotel|pousada/],
+  ["Saúde", /drog|farm|clinica|hospital|laborat|odonto/],
+  ["Educação", /curso|escola|faculd|estudos|udemy|alura|livraria/],
+  ["Pessoal", /shopee|renner|riachuelo|c&a|tiktok|mercadoli|amazon|magalu|shein|zara|variedades/]
+];
+function guessCat(name, cats) {
+  var n = normTxt(name);
+  for (var i = 0; i < CAT_HINT.length; i++) if (CAT_HINT[i][1].test(n) && cats.indexOf(CAT_HINT[i][0]) >= 0) return CAT_HINT[i][0];
+  return cats.indexOf("Outros") >= 0 ? "Outros" : cats[cats.length - 1];
+}
+
 /* ===== FIM DO NÚCLEO ===== */

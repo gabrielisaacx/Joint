@@ -95,3 +95,12 @@ O `index.html` publicado é gerado a partir de `src/`: `template.html`, `style.c
 - Gerar: `node src/build.js index.html`
 - Testes das regras: `node tests/core.test.js`
 - Testes de tela (Playwright + Chrome, servindo a pasta em `localhost:8123`): `python3 tests/ui/<nome>.py`
+
+## Importar fatura do cartão (PDF)
+Em Gastos, **Importar fatura do cartão (PDF)** lê a fatura no próprio aparelho e abre uma tela de revisão; nada entra sem confirmação e o arquivo não é enviado para lugar nenhum.
+- Formato reconhecido: **Nubank**. Para outros bancos há uma leitura genérica (dd/mm, descrição, valor), sinalizada na tela. Fatura escaneada (imagem) não é lida.
+- Pagamentos da própria fatura ficam de fora. Estorno de compra da mesma fatura anula a compra. Estorno solto pode entrar como receita.
+- Parcelas ("Parcela 2/5") entram com o número certo e, se marcado, as parcelas a vencer são lançadas nos meses seguintes.
+- A categoria vem do histórico do casal para o mesmo nome e, na falta, de palavras-chave. Trocar a categoria de uma loja troca as demais linhas da mesma loja.
+- Os identificadores são derivados do conteúdo (cartão, data, nome, valor), então importar a mesma fatura de novo não duplica; lançamentos manuais de mesmo valor em data próxima aparecem como "possível duplicado".
+- Leitor de PDF: [pdf.js](https://mozilla.github.io/pdf.js/) 3.11.174 (Apache-2.0), em `vendor/`, carregado só quando se importa uma fatura.

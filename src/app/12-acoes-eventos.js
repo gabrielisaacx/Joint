@@ -110,6 +110,10 @@ var A={
   },
   export:function(){dl("joint-backup-"+today()+".json","application/json",JSON.stringify(S));try{localStorage.setItem("joint.bkp",String(Date.now()))}catch(x){}toast("Backup exportado. Guarde o arquivo fora do celular.");if(tab==="home"&&$("#sheet").hidden)render()},
   import:function(){$("#file").click()},
+  pdf:function(){$("#pdf").click()},
+  imppw:function(){var p=fields().ppw||"";if(!p){toast("Digite a senha do PDF.");return}closeSheet();impRead(p)},
+  impall:function(e){var on=e.dataset.id==="1";imp.rows.forEach(function(r){if(!r.lock)r.sel=on});var sc=$("#sheetBody").scrollTop;impDraw();$("#sheetBody").scrollTop=sc},
+  impgo:function(){impGo()},
   wipe:function(){if(!confirm("Apagar TODOS os dados deste aparelho? Se a sincronização estiver ligada, eles voltam do servidor."))return;try{localStorage.removeItem(KEY)}catch(e){}S=blank();persist();closeSheet();render();toast("Dados apagados.")}
 };
 function slug(n){return String(n||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]/g,"").slice(0,30)}
@@ -135,6 +139,8 @@ document.addEventListener("input",function(ev){var e=ev.target;if(sheetKind==="t
   if(sheetKind==="wif"&&e.dataset&&(e.dataset.f==="wm"||e.dataset.f==="wx"))wifOut();
   if(e.id==="txq"){txQ=e.value;var l=$("#txl");if(l)l.innerHTML=txList()}});
 document.addEventListener("change",function(ev){
+  if(ev.target.id==="pdf"){var pf=ev.target.files[0];ev.target.value="";impFile(pf);return}
+  if(sheetKind==="imp"&&ev.target.dataset&&(ev.target.dataset.imp!=null||ev.target.dataset.impc!=null||ev.target.dataset.imps!=null||/^(icd|iw|im|ifut|is)$/.test(ev.target.dataset.f||""))){impChange(ev.target);return}
   if(sheetKind==="tx"&&ev.target.dataset&&(ev.target.dataset.f==="cd"||ev.target.dataset.f==="d"))parcHint();
   if(ev.target.id==="file"){
     var f=ev.target.files[0];if(!f)return;var rd=new FileReader();

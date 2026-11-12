@@ -1,6 +1,6 @@
 const fs=require("fs"),vm=require("vm"),assert=require("assert");
 const ctx={};vm.createContext(ctx);vm.runInContext(fs.readFileSync(__dirname+"/../src/core.js","utf8"),ctx);
-const {simulate,solvePmt,solveMonths,fvClosed,mRate,irRate,shares,balance,parseMoney,dayAdd,dayDiff,logStreak,planStreak,milestones,streakScan,addMonths,invoiceOf,splitParcelas,parcelPV,parcelRate,diagnose,suggestBudget,whatIf,quickPicks,normTxt}=ctx;
+const {simulate,solvePmt,solveMonths,fvClosed,mRate,irRate,shares,balance,parseMoney,dayAdd,dayDiff,logStreak,planStreak,milestones,streakScan,addMonths,invoiceOf,splitParcelas,parcelPV,parcelRate,diagnose,suggestBudget,whatIf,quickPicks,normTxt,parseFatura,guessCat,hash32}=ctx;
 let n=0;function ok(name,f){f();n++;console.log("ok -",name)}
 const near=(a,b,t,m)=>assert(Math.abs(a-b)<=t,(m||"")+" "+a+" vs "+b);
 
@@ -134,4 +134,23 @@ ok("diagnóstico: classificação de categoria configurável (Pets como essencia
   const b={inc:1000000,exp:600000,fixed:0,cat:{Pets:600000},saveTarget:20};
   assert.strictEqual(diagnose(b).items.find(i=>i.id==="rule"),undefined);
   assert.strictEqual(diagnose(Object.assign({kind:{Pets:"n"}},b)).items.find(i=>i.id==="rule").sev,"warn")});
+const FAT=["Data de vencimento: 10 JAN 2027","Período vigente: 03 DEZ a 03 JAN","Nu Pagamentos S.A.","Total a pagar R$ 1.234,56","TRANSAÇÕES DE 03 DEZ A 03 JAN","Fulano de Tal R$ 500,00",
+  "05 DEZ •••• 1111 Loja Exemplo - Parcela 2/5 R$ 100,00","06 DEZ •••• 1111 Padaria Teste R$ 12,50","07 DEZ Recarga de celular R$ 20,00","02 JAN •••• 2222 Cinema Xyz R$ 40,00",
+  "03 JAN Estorno de \"Cinema Xyz\" −R$ 40,00","Estorno referente a compra em Cinema Xyz, de valor R$ 40,00,","28 DEZ Estorno de \"Loja Antiga\" −R$ 9,90",
+  "Pagamentos e Financiamentos -R$ 300,00","10 DEZ Pagamento em 10 DEZ −R$ 300,00","15 DEZ EMPRESA PIX S.A. R$ 78,75","Total a pagar: R$ 78,74 (valor da transação de R$ 75,00 + R$ 0,39 de IOF +"];
+ok("fatura Nubank: vencimento, fechamento, total, ano na virada, parcela, cartão",()=>{
+  const f=parseFatura(FAT);assert.strictEqual(f.bank,"Nubank");assert.strictEqual(f.due,"2027-01-10");assert.strictEqual(f.close,3);assert.strictEqual(f.dueDay,10);assert.strictEqual(f.total,123456);
+  const a=f.items[0];assert.strictEqual(a.d,"2026-12-05");assert.strictEqual(a.n,"Loja Exemplo");assert.strictEqual(a.in,2);assert.strictEqual(a.it,5);assert.strictEqual(a.v,10000);assert.strictEqual(a.card4,"1111");
+  assert.strictEqual(f.items.find(i=>i.n==="Recarga de celular").card4,"");assert.strictEqual(f.items.find(i=>i.n==="Cinema Xyz").d,"2027-01-02")});
+ok("fatura Nubank: pagamentos ficam fora; estorno casado anula a compra; estorno solto vira crédito; Pix no crédito entra",()=>{
+  const f=parseFatura(FAT);assert.strictEqual(f.pay,1);assert.strictEqual(f.items.filter(i=>i.kind==="can").length,2);
+  const r=f.items.filter(i=>i.kind==="ref");assert.strictEqual(r.length,1);assert.strictEqual(r[0].ref,"Loja Antiga");
+  const p=f.items.filter(i=>i.kind==="fin");assert.strictEqual(p.length,1);assert.strictEqual(p[0].v,7875);assert.strictEqual(f.items.filter(i=>i.kind==="buy").length,3)});
+ok("fatura genérica: linhas dd/mm, parcela 03/10, crédito negativo, ano inferido sem passar de hoje",()=>{
+  const f=parseFatura(["Banco Qualquer","12/11 SUPERMERCADO ABC 152,30","28/12 LOJA DEF 03/10 99,90","05/11 DEVOLUCAO GHI - 20,00","texto solto 10,00"],"2026-11-20");
+  assert(f.generic);assert.strictEqual(f.items.length,3);assert.strictEqual(f.items[0].d,"2026-11-12");assert.strictEqual(f.items[1].d,"2025-12-28");assert.strictEqual(f.items[1].in,3);assert.strictEqual(f.items[1].it,10);assert.strictEqual(f.items[1].n,"LOJA DEF");assert.strictEqual(f.items[2].kind,"ref")});
+ok("fatura: texto sem lançamentos => lista vazia",()=>assert.strictEqual(parseFatura(["Olá","nada aqui R$ 10,00"]).items.length,0));
+ok("categoria provável pelo nome",()=>{const C=["Moradia","Mercado","Restaurantes","Transporte","Saúde","Assinaturas","Viagem","Pessoal","Outros"];
+  assert.strictEqual(guessCat("Uber Uber *Trip",C),"Transporte");assert.strictEqual(guessCat("iFood - NuPay",C),"Restaurantes");assert.strictEqual(guessCat("Mp *Lojamercadoli",C),"Pessoal");
+  assert.strictEqual(guessCat("Apple.Com/Bill",C),"Assinaturas");assert.strictEqual(guessCat("Coisa Estranha",C),"Outros");assert.strictEqual(guessCat("Uber",["Moradia","Outros"]),"Outros");assert.strictEqual(hash32("a"),hash32("a"));assert.notStrictEqual(hash32("a"),hash32("b"))});
 console.log("\n"+n+" testes passaram");
