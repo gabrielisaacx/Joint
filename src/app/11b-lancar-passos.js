@@ -17,11 +17,12 @@ function wizRing(){
 }
 function wizHead(t){
   var dots=[0,1,2].map(function(i){return '<i class="'+(i<=wz.st?'on':'')+'"></i>'}).join('');
-  return '<div class="row sp">'+(wz.st?'<button class="ghost" data-act="wback" aria-label="Voltar">‹ Voltar</button>':'<span></span>')+'<span class="wdots">'+dots+'</span><button class="ghost" data-act="wfull">Mais detalhes</button></div><h3 class="wtit">'+t+'</h3>';
+  return '<div class="row sp">'+(wz.st||wz.sub?'<button class="ghost" data-act="wback" aria-label="Voltar">‹ Voltar</button>':'<span></span>')+'<span class="wdots">'+dots+'</span><button class="ghost" data-act="wfull">Mais detalhes</button></div><h3 class="wtit">'+t+'</h3>';
 }
 function wizDraw(){
   var h,d=draft;
-  if(wz.st===0){
+  if(wz.st===0&&wz.sub){h=wizSubs()}
+  else if(wz.st===0){
     var cats=d.k==="i"?INC:S.cfg.cats;
     h=wizHead(d.k==="i"?"De onde veio?":"Com o que foi?")
       +'<div class="seg"><button data-act="wk2" data-id="o"'+(d.k==="o"?' class="on"':'')+'>Despesa</button><button data-act="wk2" data-id="i"'+(d.k==="i"?' class="on"':'')+'>Receita</button></div>'
@@ -29,7 +30,7 @@ function wizDraw(){
     var qp=quickPicks(S.tx.filter(function(t){return !t.x&&t.k===d.k&&!(t.in>1)}),"",4);
     if(qp.length){wz.qp=qp;h+='<p class="note">Repetir um recente</p><div class="chips">'+qp.map(function(t,i){return '<button type="button" class="chip" data-act="wqp" data-id="'+i+'"><b>'+esc(t.n||t.c)+'</b> '+brl0(t.v)+'</button>'}).join('')+'</div>'}
   }else if(wz.st===1){
-    h=wizHead('<span class="wic">'+catIc(d.c)+'</span> '+esc(d.c))+wizRing()
+    var sb=subFind(d.n);h=wizHead((sb?subLogo(sb,false):'<span class="wic">'+catIc(d.c)+'</span>')+' '+esc(sb?sb[0]:d.c))+wizRing()
       +'<div class="wval" id="wval">'+brl(d.v||0)+'</div>'
       +'<input type="text" class="wname" data-f="wn" value="'+esc(d.n)+'" placeholder="Descrição (opcional)" autocomplete="off">'
       +'<div class="wpad">'+["1","2","3","4","5","6","7","8","9","00","0","del"].map(function(k){return '<button data-act="wkey" data-id="'+k+'">'+(k==="del"?"⌫":k)+'</button>'}).join('')+'</div>'
@@ -37,7 +38,7 @@ function wizDraw(){
   }else{
     var td=+today().slice(8,10),ym=month,cur=today().slice(0,7),nd=dim(ym),sel=d.d.slice(0,7)===ym?+d.d.slice(8,10):0,g='';
     for(var i=1;i<=nd;i++)g+='<button class="wday'+(i===sel?' on':'')+(ym===cur&&i===td?' td':'')+'" data-act="wday" data-id="'+i+'">'+i+'</button>';
-    h=wizHead("Qual dia?")+'<p class="note"><span class="wic">'+catIc(d.c)+'</span> '+esc(d.n||d.c)+' · <b>'+brl(d.v)+'</b> · '+ymLabel(ym)+'</p><div class="wdays">'+g+'</div>'
+    h=wizHead("Qual dia?")+'<p class="note">'+(subFind(d.n)?'':'<span class="wic">'+catIc(d.c)+'</span> ')+esc(d.n||d.c)+' · <b>'+brl(d.v)+'</b> · '+ymLabel(ym)+(d.rep?' · <b>todo mês</b>':'')+'</p><div class="wdays">'+g+'</div>'
       +'<button class="btn sec full" data-act="wday" data-id="'+(ym===cur?td:sel||1)+'">'+(ym===cur?'Hoje':'Dia '+(sel||1))+'</button>';
   }
   openSheet(h);

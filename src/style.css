@@ -265,3 +265,8 @@ input[type=search]{width:100%;background:var(--surface2);border:1px solid var(--
 .wdays{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
 .wday{aspect-ratio:1;min-height:40px;border-radius:999px;border:0;background:var(--surface2);font-weight:700;color:var(--fg);font-size:.95rem}
 .wday.td{box-shadow:inset 0 0 0 2px var(--fg)}.wday.on{background:var(--fg);color:var(--bg)}
+
+.slogo{position:relative;display:inline-flex;align-items:center;justify-content:center;border-radius:11px;overflow:hidden;flex:none;vertical-align:middle}
+.slogo b{color:#fff;font-size:1.1rem}.slogo img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff;opacity:0}
+.slogo.ok img{opacity:1}.slogo.ok{background:#fff!important;box-shadow:0 0 0 1px var(--line)}
+.wtit .slogo{margin-right:4px}

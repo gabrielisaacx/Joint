@@ -4,12 +4,15 @@ var A={
   cfg:function(){openCfg()},
   new:function(){openWiz()},
   wk2:function(e){draft.k=e.dataset.id;wizDraw()},
-  wcat:function(e){draft.c=e.dataset.id;wz.st=1;wizDraw()},
+  wcat:function(e){draft.c=e.dataset.id;if(draft.k==="o"&&draft.c==="Assinaturas"){wz.sub=1;wizDraw();return}wz.st=1;wizDraw()},
+  wsub:function(e){var i=+e.dataset.id,sb=SUBS[i];draft.rep=true;draft.n=sb?sb[0]:"";wz.sub=0;wz.st=1;
+    if(sb){var last=null;S.tx.forEach(function(t){if(!t.x&&t.k==="o"&&normTxt(t.n)===normTxt(sb[0])&&(!last||t.d>last.d))last=t});if(last){draft.v=last.v;wz.cents=String(last.v)}}
+    wizDraw();if(!sb){var n=$('#sheetBody [data-f="wn"]');if(n)n.focus()}},
   wqp:function(e){var t=wz.qp[+e.dataset.id];if(!t)return;draft.c=t.c;draft.n=t.n||"";draft.v=t.v;draft.s=t.s||0;if(t.cd){var cc=find(S.cards,t.cd);if(cc&&!cc.x)draft.cd=t.cd}wz.cents=String(t.v);wz.st=1;wizDraw()},
   wkey:function(e){wizKey(e.dataset.id)},
   wnext:function(){if(!(draft.v>0))return;var n=$('#sheetBody [data-f="wn"]');if(n)draft.n=n.value.trim();var cur=today().slice(0,7);if(month!==cur)draft.d=month+"-01";wz.st=2;wizDraw()},
   wday:function(e){draft.d=month+"-"+pad(Math.min(+e.dataset.id,dim(month)));wizFinish()},
-  wback:function(){var n=$('#sheetBody [data-f="wn"]');if(n)draft.n=n.value.trim();wz.st=Math.max(0,wz.st-1);wizDraw()},
+  wback:function(){var n=$('#sheetBody [data-f="wn"]');if(n)draft.n=n.value.trim();if(wz.sub){wz.sub=0;wizDraw();return}wz.st=Math.max(0,wz.st-1);if(wz.st===0&&draft.c==="Assinaturas"&&draft.k==="o")wz.sub=1;wizDraw()},
   wfull:function(){var n=$('#sheetBody [data-f="wn"]');if(n)draft.n=n.value.trim();if(!draft.c)draft.c=draft.k==="i"?INC[0]:S.cfg.cats[0];sheetKind="tx";drawTx();qpDraw()},
   close:function(){closeSheet()},
   prevm:function(){month=ymAdd(month,-1);render()},

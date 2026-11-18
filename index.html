@@ -295,6 +295,11 @@ input[type=search]{width:100%;background:var(--surface2);border:1px solid var(--
 .wday{aspect-ratio:1;min-height:40px;border-radius:999px;border:0;background:var(--surface2);font-weight:700;color:var(--fg);font-size:.95rem}
 .wday.td{box-shadow:inset 0 0 0 2px var(--fg)}.wday.on{background:var(--fg);color:var(--bg)}
 
+.slogo{position:relative;display:inline-flex;align-items:center;justify-content:center;border-radius:11px;overflow:hidden;flex:none;vertical-align:middle}
+.slogo b{color:#fff;font-size:1.1rem}.slogo img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff;opacity:0}
+.slogo.ok img{opacity:1}.slogo.ok{background:#fff!important;box-shadow:0 0 0 1px var(--line)}
+.wtit .slogo{margin-right:4px}
+
 </style>
 </head>
 <body>
@@ -1529,11 +1534,12 @@ function wizRing(){
 }
 function wizHead(t){
   var dots=[0,1,2].map(function(i){return '<i class="'+(i<=wz.st?'on':'')+'"></i>'}).join('');
-  return '<div class="row sp">'+(wz.st?'<button class="ghost" data-act="wback" aria-label="Voltar">‹ Voltar</button>':'<span></span>')+'<span class="wdots">'+dots+'</span><button class="ghost" data-act="wfull">Mais detalhes</button></div><h3 class="wtit">'+t+'</h3>';
+  return '<div class="row sp">'+(wz.st||wz.sub?'<button class="ghost" data-act="wback" aria-label="Voltar">‹ Voltar</button>':'<span></span>')+'<span class="wdots">'+dots+'</span><button class="ghost" data-act="wfull">Mais detalhes</button></div><h3 class="wtit">'+t+'</h3>';
 }
 function wizDraw(){
   var h,d=draft;
-  if(wz.st===0){
+  if(wz.st===0&&wz.sub){h=wizSubs()}
+  else if(wz.st===0){
     var cats=d.k==="i"?INC:S.cfg.cats;
     h=wizHead(d.k==="i"?"De onde veio?":"Com o que foi?")
       +'<div class="seg"><button data-act="wk2" data-id="o"'+(d.k==="o"?' class="on"':'')+'>Despesa</button><button data-act="wk2" data-id="i"'+(d.k==="i"?' class="on"':'')+'>Receita</button></div>'
@@ -1541,7 +1547,7 @@ function wizDraw(){
     var qp=quickPicks(S.tx.filter(function(t){return !t.x&&t.k===d.k&&!(t.in>1)}),"",4);
     if(qp.length){wz.qp=qp;h+='<p class="note">Repetir um recente</p><div class="chips">'+qp.map(function(t,i){return '<button type="button" class="chip" data-act="wqp" data-id="'+i+'"><b>'+esc(t.n||t.c)+'</b> '+brl0(t.v)+'</button>'}).join('')+'</div>'}
   }else if(wz.st===1){
-    h=wizHead('<span class="wic">'+catIc(d.c)+'</span> '+esc(d.c))+wizRing()
+    var sb=subFind(d.n);h=wizHead((sb?subLogo(sb,false):'<span class="wic">'+catIc(d.c)+'</span>')+' '+esc(sb?sb[0]:d.c))+wizRing()
       +'<div class="wval" id="wval">'+brl(d.v||0)+'</div>'
       +'<input type="text" class="wname" data-f="wn" value="'+esc(d.n)+'" placeholder="Descrição (opcional)" autocomplete="off">'
       +'<div class="wpad">'+["1","2","3","4","5","6","7","8","9","00","0","del"].map(function(k){return '<button data-act="wkey" data-id="'+k+'">'+(k==="del"?"⌫":k)+'</button>'}).join('')+'</div>'
@@ -1549,7 +1555,7 @@ function wizDraw(){
   }else{
     var td=+today().slice(8,10),ym=month,cur=today().slice(0,7),nd=dim(ym),sel=d.d.slice(0,7)===ym?+d.d.slice(8,10):0,g='';
     for(var i=1;i<=nd;i++)g+='<button class="wday'+(i===sel?' on':'')+(ym===cur&&i===td?' td':'')+'" data-act="wday" data-id="'+i+'">'+i+'</button>';
-    h=wizHead("Qual dia?")+'<p class="note"><span class="wic">'+catIc(d.c)+'</span> '+esc(d.n||d.c)+' · <b>'+brl(d.v)+'</b> · '+ymLabel(ym)+'</p><div class="wdays">'+g+'</div>'
+    h=wizHead("Qual dia?")+'<p class="note">'+(subFind(d.n)?'':'<span class="wic">'+catIc(d.c)+'</span> ')+esc(d.n||d.c)+' · <b>'+brl(d.v)+'</b> · '+ymLabel(ym)+(d.rep?' · <b>todo mês</b>':'')+'</p><div class="wdays">'+g+'</div>'
       +'<button class="btn sec full" data-act="wday" data-id="'+(ym===cur?td:sel||1)+'">'+(ym===cur?'Hoje':'Dia '+(sel||1))+'</button>';
   }
   openSheet(h);
@@ -1565,18 +1571,42 @@ function wizFinish(){
   var dd=$('#sheetBody [data-f="d"]');if(dd)dd.value=draft.d;
   saveTx();
 }
+/* ---------- serviços de assinatura (no lançamento em passos) ----------
+   O logo vem, na hora, do ícone que o próprio site do serviço publica, buscado pelo serviço de ícones do Google.
+   Nenhum logo fica guardado no código. Sem internet, ou se o ícone não carregar, aparece a inicial na cor do serviço.
+   Escolher um serviço já marca o lançamento como fixo mensal. */
+var SUBS=[
+ ["Netflix","netflix.com","#E50914"],["YouTube Premium","youtube.com","#FF0000"],["Spotify","spotify.com","#1DB954"],["Disney+","disneyplus.com","#113CCF"],
+ ["Max","max.com","#002BE7"],["Prime Video","primevideo.com","#00A8E1"],["Globoplay","globoplay.globo.com","#FB0234"],["Apple TV+","tv.apple.com","#111111"],
+ ["Paramount+","paramountplus.com","#0064FF"],["Deezer","deezer.com","#A238FF"],["Apple Music","music.apple.com","#FA243C"],["Crunchyroll","crunchyroll.com","#F47521"],
+ ["Smart Fit","smartfit.com.br","#FFB800"],["Wellhub","wellhub.com","#E8336F"],["Bluefit","bluefit.com.br","#0057B8"],["Strava","strava.com","#FC4C02"],
+ ["iCloud","icloud.com","#3693F3"],["Google One","one.google.com","#4285F4"],["Microsoft 365","microsoft.com","#D83B01"],["ChatGPT","chatgpt.com","#10A37F"],
+ ["Duolingo","duolingo.com","#58CC02"],["Amazon Prime","amazon.com.br","#00A8E1"],["Mercado Livre","mercadolivre.com.br","#FFE600"],["iFood Clube","ifood.com.br","#EA1D2C"]
+];
+function subLogo(s,big){
+  var sz=big?44:36;
+  return '<span class="slogo" style="width:'+sz+'px;height:'+sz+'px;background:'+s[2]+'"><b>'+esc(s[0].charAt(0))+'</b><img alt="" loading="lazy" referrerpolicy="no-referrer" src="https://www.google.com/s2/favicons?domain='+encodeURIComponent(s[1])+'&sz=128" onload="this.parentNode.classList.add(\'ok\')" onerror="this.remove()"></span>';
+}
+function subFind(n){var k=normTxt(n);for(var i=0;i<SUBS.length;i++)if(normTxt(SUBS[i][0])===k)return SUBS[i];return null}
+function wizSubs(){
+  return wizHead("Qual assinatura?")+'<div class="wgrid">'+SUBS.map(function(s,i){return '<button class="wcat" data-act="wsub" data-id="'+i+'">'+subLogo(s,true)+esc(s[0])+'</button>'}).join('')
+    +'<button class="wcat" data-act="wsub" data-id="-1"><span>✏️</span>Outra</button></div><p class="note">Os logos são carregados do site de cada serviço quando há internet. A assinatura entra como fixo mensal.</p>';
+}
 /* ---------- ações ---------- */
 var A={
   tab:function(e){tab=e.dataset.id;goalId=null;render();window.scrollTo(0,0)},
   cfg:function(){openCfg()},
   new:function(){openWiz()},
   wk2:function(e){draft.k=e.dataset.id;wizDraw()},
-  wcat:function(e){draft.c=e.dataset.id;wz.st=1;wizDraw()},
+  wcat:function(e){draft.c=e.dataset.id;if(draft.k==="o"&&draft.c==="Assinaturas"){wz.sub=1;wizDraw();return}wz.st=1;wizDraw()},
+  wsub:function(e){var i=+e.dataset.id,sb=SUBS[i];draft.rep=true;draft.n=sb?sb[0]:"";wz.sub=0;wz.st=1;
+    if(sb){var last=null;S.tx.forEach(function(t){if(!t.x&&t.k==="o"&&normTxt(t.n)===normTxt(sb[0])&&(!last||t.d>last.d))last=t});if(last){draft.v=last.v;wz.cents=String(last.v)}}
+    wizDraw();if(!sb){var n=$('#sheetBody [data-f="wn"]');if(n)n.focus()}},
   wqp:function(e){var t=wz.qp[+e.dataset.id];if(!t)return;draft.c=t.c;draft.n=t.n||"";draft.v=t.v;draft.s=t.s||0;if(t.cd){var cc=find(S.cards,t.cd);if(cc&&!cc.x)draft.cd=t.cd}wz.cents=String(t.v);wz.st=1;wizDraw()},
   wkey:function(e){wizKey(e.dataset.id)},
   wnext:function(){if(!(draft.v>0))return;var n=$('#sheetBody [data-f="wn"]');if(n)draft.n=n.value.trim();var cur=today().slice(0,7);if(month!==cur)draft.d=month+"-01";wz.st=2;wizDraw()},
   wday:function(e){draft.d=month+"-"+pad(Math.min(+e.dataset.id,dim(month)));wizFinish()},
-  wback:function(){var n=$('#sheetBody [data-f="wn"]');if(n)draft.n=n.value.trim();wz.st=Math.max(0,wz.st-1);wizDraw()},
+  wback:function(){var n=$('#sheetBody [data-f="wn"]');if(n)draft.n=n.value.trim();if(wz.sub){wz.sub=0;wizDraw();return}wz.st=Math.max(0,wz.st-1);if(wz.st===0&&draft.c==="Assinaturas"&&draft.k==="o")wz.sub=1;wizDraw()},
   wfull:function(){var n=$('#sheetBody [data-f="wn"]');if(n)draft.n=n.value.trim();if(!draft.c)draft.c=draft.k==="i"?INC[0]:S.cfg.cats[0];sheetKind="tx";drawTx();qpDraw()},
   close:function(){closeSheet()},
   prevm:function(){month=ymAdd(month,-1);render()},
