@@ -20,7 +20,7 @@ with sync_playwright() as pw:
     pg.click(".round"); pg.click("[data-act=cardnew]"); pg.fill("[data-f=name]","X"); pg.fill("[data-f=close]","31"); pg.click("[data-act=cardsave]")
     assert "1 a 28" in pg.inner_text("#toast"); pg.click("#sheetBody [data-act=cfg]"); pg.click("#sheetBody [data-act=close]")
     # 2) compra parcelada no cartão: 10x, compra no dia 1 (<= fechamento) => 1ª fatura = mês atual
-    pg.click(".fab"); pg.wait_for_selector("#sheet:not([hidden])")
+    pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#sheet:not([hidden])")
     pg.fill("[data-f=v]","3.000,00"); pg.fill("[data-f=n]","Geladeira"); pg.fill("[data-f=d]",cur+"-01")
     pg.select_option("[data-f=cd]",label="Cartão Nubank"); pg.fill("[data-f=np]","10")
     h=pg.inner_text("#parcHint"); print("hint:",h.replace("\n"," "))
@@ -46,7 +46,7 @@ with sync_playwright() as pw:
     pg.screenshot(path="shots/parc-gastos.png",full_page=True)
     pg.click("[data-act=nextm]"); t=pg.inner_text("#app"); assert "2/10" in t and "vence 12/"+nxt(cur,1)[5:] in t
     # 5) compra depois do fechamento (dia 6) cai na fatura seguinte
-    pg.click("[data-act=tab][data-id=home]"); pg.click(".fab"); pg.wait_for_selector("#sheet:not([hidden])")
+    pg.click("[data-act=tab][data-id=home]"); pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#sheet:not([hidden])")
     pg.fill("[data-f=v]","100,00"); pg.fill("[data-f=n]","Mercado"); pg.fill("[data-f=d]",cur+"-06"); pg.select_option("[data-f=cd]",label="Cartão Nubank")
     assert "vence em 12/"+nxt(cur,1)[5:] in pg.inner_text("#parcHint")
     pg.click("[data-act=txsave]"); pg.wait_for_selector("#sheet",state="hidden")
@@ -60,12 +60,12 @@ with sync_playwright() as pw:
     pg.click("[data-act=tab][data-id=home]"); t=pg.inner_text("#app")
     assert "R$ 100" in t and "R$ 2.700" not in t   # resta só o Mercado de R$ 100 na fatura do mês que vem
     # 7) parcelado sem cartão: datas no fim do mês e soma exata
-    pg.click(".fab"); pg.wait_for_selector("#sheet:not([hidden])")
+    pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#sheet:not([hidden])")
     pg.fill("[data-f=v]","100,01"); pg.fill("[data-f=n]","Sofá"); pg.fill("[data-f=d]","2027-01-31"); pg.fill("[data-f=np]","3"); pg.click("[data-act=txsave]"); pg.wait_for_selector("#sheet",state="hidden")
     so=sorted([t for t in S()["tx"] if t["n"]=="Sofá"],key=lambda t:t["in"])
     assert [t["d"] for t in so]==["2027-01-31","2027-02-28","2027-03-31"] and [t["v"] for t in so]==[3335,3333,3333] and all("m" not in t and "cd" not in t for t in so)
     # 8) fixo no cartão
-    pg.click(".fab"); pg.wait_for_selector("#sheet:not([hidden])")
+    pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#sheet:not([hidden])")
     pg.fill("[data-f=v]","39,90"); pg.fill("[data-f=n]","Streaming"); pg.fill("[data-f=d]",cur+"-03"); pg.select_option("[data-f=cd]",label="Cartão Nubank"); pg.check("[data-f=rep]")
     pg.click("[data-act=txsave]"); pg.wait_for_selector("#sheet",state="hidden")
     st=[t for t in S()["tx"] if t["n"]=="Streaming"][0]; assert st["cd"] and st["m"]==cur and st.get("r") and S()["rec"][0]["cd"]==st["cd"]

@@ -17,7 +17,7 @@ with sync_playwright() as p:
     pg.select_option("[data-f=me]","0"); pg.click("[data-act=welcomesave]")
     assert not pg.is_visible("#sheet")
     def add(kind,v,desc,cat=None,w=None,split=None,rep=False):
-        pg.click(".fab"); pg.wait_for_selector("#sheet:not([hidden])")
+        pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#sheet:not([hidden])")
         if kind!="o": pg.click(f"[data-act=kind][data-id={kind}]")
         pg.fill("[data-f=v]",v)
         if desc is not None and pg.query_selector("[data-f=n]"): pg.fill("[data-f=n]",desc)

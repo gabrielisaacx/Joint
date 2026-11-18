@@ -13,7 +13,7 @@ with sync_playwright() as pw:
     pg.wait_for_selector("#sheet:not([hidden])"); pg.select_option("[data-f=me]","0"); pg.click("[data-act=welcomesave]")
     cur=dt.date.today().strftime("%Y-%m")
     def tx(k,v,c,n,date,rep=False):
-        pg.click(".fab"); pg.wait_for_selector("#sheet:not([hidden])")
+        pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#sheet:not([hidden])")
         if k=="i": pg.click("#sheetBody [data-id=i]")
         pg.fill("[data-f=v]",v); pg.fill("[data-f=n]",n); pg.fill("[data-f=d]",date)
         if k=="o": pg.select_option("[data-f=c]",c)
@@ -33,7 +33,7 @@ with sync_playwright() as pw:
     t2=pg.inner_text("#app"); assert "(planejado)" in t2 and "Sobra R$ 3.000" in t2.replace("\n"," "), t2[t2.find("Evolu"):][:500]
     pg.screenshot(path=f"shots/compact_home_{mode}.png",full_page=True)
     pg.click("[data-act=ctab][data-id=pace]"); assert "RITMO DO MÊS" in pg.inner_text("#app").upper()
-    pg.locator("#pbox svg").scroll_into_view_if_needed(); bx=pg.locator("#pbox svg").bounding_box(); pg.mouse.move(bx["x"]+bx["width"]*0.3,bx["y"]+40); pg.mouse.down(); pg.mouse.up()
+    pg.wait_for_timeout(2600); pg.locator("#pbox svg").scroll_into_view_if_needed(); bx=pg.locator("#pbox svg").bounding_box(); pg.mouse.move(bx["x"]+bx["width"]*0.3,bx["y"]+40); pg.mouse.down(); pg.mouse.up()
     tip=pg.inner_text("#ptip"); assert "Dia" in tip, tip
     pg.screenshot(path=f"shots/charts_home_{mode}.png",full_page=True)
     print("W",pg.evaluate("[document.documentElement.scrollWidth,innerWidth]"))

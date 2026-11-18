@@ -12,7 +12,7 @@ with sync_playwright() as pw:
     cur=pg.evaluate("(()=>{const n=new Date();return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')})()")
     nxt=lambda ym,k: (lambda y,m:(f"{y+(m+k-1)//12}-{(m+k-1)%12+1:02d}"))(int(ym[:4]),int(ym[5:]))
     def tx(k,v,c,n,d):
-        pg.click(".fab"); pg.wait_for_selector("#sheet:not([hidden])")
+        pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#sheet:not([hidden])")
         if k=="i": pg.click("#sheetBody [data-id=i]")
         pg.fill("[data-f=v]",v); pg.fill("[data-f=n]",n); pg.fill("[data-f=d]",cur+"-"+d)
         if k=="o": pg.select_option("[data-f=c]",c)

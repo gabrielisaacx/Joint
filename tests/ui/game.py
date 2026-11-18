@@ -17,7 +17,7 @@ with sync_playwright() as pw:
     pg.click("[data-act=noday]"); assert "1 dia" in home() and pg.locator(".wd.on").count()==1 and "sem gastos" in home()
     pg.click("[data-act=noundo]"); assert "0 dias" in home() and pg.locator(".wd.on").count()==0
     # 3) um gasto vira registro do dia e destrava "Primeiro passo"
-    pg.click(".fab"); pg.wait_for_selector("#sheet:not([hidden])"); pg.fill("[data-f=v]","50,00"); pg.click("[data-act=txsave]"); pg.wait_for_selector("#sheet",state="hidden")
+    pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#sheet:not([hidden])"); pg.fill("[data-f=v]","50,00"); pg.click("[data-act=txsave]"); pg.wait_for_selector("#sheet",state="hidden")
     t=home(); assert "1 dia" in t and "Conquistas 1/14" in t, t[:300]
     assert [a["id"] for a in S()["ach"]]==["first"]
     # 4) meses anteriores: 3 meses fechados no plano + reserva

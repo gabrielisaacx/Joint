@@ -18,7 +18,7 @@ def device(b,name):
     pg.wait_for_selector("#sheet:not([hidden])"); pg.select_option("[data-f=me]","0"); pg.click("[data-act=welcomesave]")
     return pg
 def tx(pg,v,n):
-    pg.click(".fab"); pg.wait_for_selector("#sheet:not([hidden])"); pg.fill("[data-f=v]",v); pg.fill("[data-f=n]",n); pg.click("[data-act=txsave]"); pg.wait_for_selector("#sheet",state="hidden")
+    pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#sheet:not([hidden])"); pg.fill("[data-f=v]",v); pg.fill("[data-f=n]",n); pg.click("[data-act=txsave]"); pg.wait_for_selector("#sheet",state="hidden")
 def connect(pg,epw):
     pg.click(".round"); pg.wait_for_selector("[data-f=api]"); pg.fill("[data-f=api]",API); pg.fill("[data-f=sid]","casalteste"); pg.fill("[data-f=pin]","9911")
     if epw is not None: pg.fill("[data-f=epw]",epw)

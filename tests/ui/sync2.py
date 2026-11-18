@@ -19,7 +19,7 @@ def device(b,name):
     pg.click(".round"); pg.wait_for_selector("[data-f=api]"); pg.fill("[data-f=api]",API); pg.fill("[data-f=sid]","casalteste"); pg.fill("[data-f=pin]","9911"); pg.click("[data-act=cfgsave]"); pg.wait_for_timeout(1500)
     return pg
 def tx(pg,v,n,c="Mercado"):
-    pg.click(".fab"); pg.wait_for_selector("#sheet:not([hidden])"); pg.fill("[data-f=v]",v); pg.fill("[data-f=n]",n); pg.select_option("[data-f=c]",c); pg.click("[data-act=txsave]"); pg.wait_for_selector("#sheet",state="hidden")
+    pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#sheet:not([hidden])"); pg.fill("[data-f=v]",v); pg.fill("[data-f=n]",n); pg.select_option("[data-f=c]",c); pg.click("[data-act=txsave]"); pg.wait_for_selector("#sheet",state="hidden")
 S=lambda pg:pg.evaluate("window.__joint.S()")
 names=lambda pg:sorted(t["n"] for t in S(pg)["tx"] if not t.get("x"))
 with sync_playwright() as pw:

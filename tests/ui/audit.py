@@ -10,7 +10,7 @@ with sync_playwright() as pw:
     pg.wait_for_selector("#sheet:not([hidden])"); pg.select_option("[data-f=me]","0"); pg.click("[data-act=welcomesave]")
     td=dt.date.today(); cur=td.strftime("%Y-%m")
     # saldo entre vocês: 10x de R$ 100 dividido meio a meio, só a parcela de hoje conta (R$ 50), não as 10 (R$ 500)
-    pg.click(".fab"); pg.wait_for_selector("#sheet:not([hidden])"); pg.fill("[data-f=v]","1.000,00"); pg.fill("[data-f=n]","Sofá"); pg.fill("[data-f=np]","10"); pg.click("[data-act=txsave]"); pg.wait_for_selector("#sheet",state="hidden")
+    pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#sheet:not([hidden])"); pg.fill("[data-f=v]","1.000,00"); pg.fill("[data-f=n]","Sofá"); pg.fill("[data-f=np]","10"); pg.click("[data-act=txsave]"); pg.wait_for_selector("#sheet",state="hidden")
     pg.click("[data-act=tab][data-id=home]"); t=pg.inner_text("#app"); assert "deve R$ 50,00" in t, t[t.find("ENTRE"):][:200]
     # projeção: compra do mês passado que cai na fatura deste mês é valor conhecido, não entra no ritmo diário
     prev=(td.replace(day=1)-dt.timedelta(days=1)).strftime("%Y-%m-20")

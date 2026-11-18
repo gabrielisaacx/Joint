@@ -12,7 +12,7 @@ with sync_playwright() as pw:
     # sem renda
     pg.click("[data-act=diag]"); assert "Sem receita" in pg.inner_text("#sheetBody"); pg.click("#sheetBody [data-act=close]")
     def tx(k,v,c,n,d="01"):
-        pg.click(".fab"); pg.wait_for_selector("#sheet:not([hidden])")
+        pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#sheet:not([hidden])")
         if k=="i": pg.click("[data-id=i]") if pg.locator("[data-id=i]").count() else pg.click("text=Receita")
         pg.fill("[data-f=v]",v); pg.fill("[data-f=n]",n); pg.fill("[data-f=d]",cur+"-"+d)
         if k=="o": pg.select_option("[data-f=c]",c)

@@ -29,7 +29,7 @@ with sync_playwright() as pw:
     pg.wait_for_selector("#sheet:not([hidden])"); pg.select_option("[data-f=me]","0"); pg.click("[data-act=welcomesave]")
     S=lambda: pg.evaluate("window.__joint.S()")
     # lançamento manual igual a um da fatura: deve virar "possível duplicado"
-    pg.click(".fab"); pg.wait_for_selector("#sheet:not([hidden])"); pg.fill("[data-f=v]","30,00"); pg.fill("[data-f=n]","Uber"); pg.fill("[data-f=d]","2026-12-29"); pg.select_option("[data-f=c]","Lazer"); pg.click("[data-act=txsave]"); pg.wait_for_selector("#sheet",state="hidden")
+    pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#sheet:not([hidden])"); pg.fill("[data-f=v]","30,00"); pg.fill("[data-f=n]","Uber"); pg.fill("[data-f=d]","2026-12-29"); pg.select_option("[data-f=c]","Lazer"); pg.click("[data-act=txsave]"); pg.wait_for_selector("#sheet",state="hidden")
     pg.click("[data-act=tab][data-id=gastos]"); pg.set_input_files("#pdf",tmp); pg.wait_for_selector(".improw",timeout=20000)
     t=pg.inner_text("#sheetBody")
     assert pg.locator(".improw").count()==7, pg.locator(".improw").count()          # 5 compras + 1 estorno solto + 1 Pix; cinema e seu estorno se anulam; pagamento fora

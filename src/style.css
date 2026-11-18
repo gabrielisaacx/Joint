@@ -246,3 +246,22 @@ input[type=search]{width:100%;background:var(--surface2);border:1px solid var(--
 .improw small{color:var(--muted);font-size:.74rem}
 .improw .v{flex:none;font-variant-numeric:tabular-nums;font-size:.92rem}
 .improw select{min-height:38px;padding:4px 8px;font-size:16px;border-radius:10px}
+
+/* ===== lançamento em passos ===== */
+.wdots{display:flex;gap:6px}.wdots i{width:7px;height:7px;border-radius:9px;background:var(--line)}.wdots i.on{background:var(--fg)}
+.wtit{text-align:center;margin:2px 0 0}.wic{font-size:1.2em}
+.wgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.wcat{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 4px;min-height:84px;border:1px solid var(--line);background:var(--surface2);border-radius:16px;font-size:.8rem;font-weight:700;color:var(--fg)}
+.wcat span{font-size:1.7rem;line-height:1}
+.wcat:active,.wday:active,.wpad button:active{transform:scale(.95)}
+.wring{position:relative;width:120px;height:120px;margin:0 auto}.wring svg{width:100%;height:100%}
+.wring>div{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.wring b{font-size:1rem}.wring small{font-size:.66rem;color:var(--muted);max-width:84px;line-height:1.2}
+.wr0{fill:none;stroke:var(--surface2);stroke-width:9}.wr1{fill:none;stroke:var(--fg);stroke-width:9;stroke-linecap:round;transition:stroke-dasharray .25s}
+.wval{font-family:var(--display);font-size:2.4rem;font-weight:600;text-align:center;font-variant-numeric:tabular-nums}
+.wname{text-align:center}
+.wpad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.wpad button{min-height:54px;border-radius:14px;border:0;background:var(--surface2);font-size:1.35rem;font-weight:600;color:var(--fg)}
+.wdays{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.wday{aspect-ratio:1;min-height:40px;border-radius:999px;border:0;background:var(--surface2);font-weight:700;color:var(--fg);font-size:.95rem}
+.wday.td{box-shadow:inset 0 0 0 2px var(--fg)}.wday.on{background:var(--fg);color:var(--bg)}

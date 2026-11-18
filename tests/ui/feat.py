@@ -14,7 +14,7 @@ with sync_playwright() as pw:
     pg.fill("[data-f=n0]","Ana"); pg.fill("[data-f=n1]","Bia"); pg.select_option("[data-f=me]","0"); pg.click("[data-act=welcomesave]")
     S=lambda: pg.evaluate("window.__joint.S()"); cur=dt.date.today().strftime("%Y-%m"); prev=ymadd(cur,-1)
     def tx(k,v,c,n,date):
-        pg.click(".fab"); pg.wait_for_selector("#sheet:not([hidden])")
+        pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#sheet:not([hidden])")
         if k=="i": pg.click("#sheetBody [data-id=i]")
         pg.fill("[data-f=v]",v); pg.fill("[data-f=n]",n); pg.fill("[data-f=d]",date)
         if k=="o": pg.select_option("[data-f=c]",c)
@@ -22,7 +22,7 @@ with sync_playwright() as pw:
     tx("i","5.000,00",None,"Salário",prev+"-05"); tx("o","2.000,00","Moradia","Aluguel",prev+"-10"); tx("o","1.500,00","Restaurantes","Jantar fora",prev+"-12"); tx("o","1.500,00","Lazer","Show",prev+"-15")
     tx("o","25,00","Transporte","Uber",cur+"-01"); tx("o","31,00","Transporte","Uber",cur+"-02")
     # 1) lançamento rápido
-    pg.click(".fab"); pg.wait_for_selector("#qp .chip"); assert "Uber" in pg.inner_text("#qp")
+    pg.click(".fab"); pg.click("[data-act=wfull]"); pg.wait_for_selector("#qp .chip"); assert "Uber" in pg.inner_text("#qp")
     pg.fill("[data-f=n]","ub"); pg.wait_for_timeout(100); assert pg.locator("#qp .chip").count()==1
     pg.click("#qp .chip"); assert pg.input_value("[data-f=n]")=="Uber" and pg.input_value("[data-f=c]")=="Transporte" and pg.input_value("[data-f=v]")=="31,00"
     pg.fill("[data-f=v]","40,00"); pg.click("[data-act=txsave]"); pg.wait_for_selector("#sheet",state="hidden")
